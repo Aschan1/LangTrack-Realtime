@@ -26,9 +26,9 @@ def keyword_metric(example, pred, trace=None):
     # === 第二关：LLM 裁判检查 ===
     kw_str = str(predicted_keywords)
 
-    q_core = f"These keywords should extract the core tangible objects from '{phrase}'. Do the keywords strictly represent physical objects, without inventing unrelated items?"
+    q_core = f"These keywords should extract the core tangible objects from '{phrase}'. Do the keywords strictly represent physical objects?"
     q_taxonomy = "Does the list conclude with a broad, standard object detection category and strictly avoid abstract concepts like 'plaything' or 'indoor'?"
-    q_combinations = f"If the phrase '{phrase}' contains multiple adjectives modifying a noun, does the list systematically include combinations of each individual adjective with the noun (e.g., 'adj1 noun', 'adj2 noun')? If the phrase does NOT have multiple adjectives, answer True."
+    q_combinations = f"If the phrase '{phrase}' contains multiple attributes to modify a noun, does the list systematically include combinations of each individual adjective with the noun (e.g., 'attribute1 noun', 'attribute2 noun', 'attribute1+attribute2 noun')?"
 
     # 使用 context 让打分过程安全地在多线程中调用 judge_lm
     with dspy.context(lm=judge_lm):
@@ -40,23 +40,36 @@ def keyword_metric(example, pred, trace=None):
 
     # COPRO 主要是看浮点数平均分，这里保留原有的逻辑即可
     if trace is not None: 
-        return total_score >= 3.0
+        return total_score >= 4.0
     
     return total_score / 4.0
 
 
 class PromptProcessor(dspy.Signature):
-    phrase: str = dspy.InputField(desc="The descriptive phrase of the target object.")
-    keywords: List[str] = dspy.OutputField(desc="A hierarchical list of keywords and each keyword should be an object, from specific to general.")
+    """
+    Extract physical-object keywords from `phrase`.
+
+    Output rules:
+    - Output ONLY a valid JSON array of strings, e.g. ["x","y"] (double quotes only).
+    - Length >= 2.
+    - keywords[0] must equal the original phrase.
+    - Remaining items must be tangible physical objects (noun phrases) only.
+    - Include adjective+noun combinations when multiple attributes modify the same noun.
+    - If multiple objects exist, include each.
+    - The last item must be one broad tangible super-category (e.g., furniture, bedding, electronics, vehicle, animal, kitchenware, clothing, toy).
+    - No extra text.
+    """
+    phrase: str = dspy.InputField(desc="English descriptive phrase.")
+    keywords: List[str] = dspy.OutputField(desc='ONLY a JSON array of strings like ["...","..."].')
 
 if __name__ == "__main__":
 
-    Training_set = [
-        dspy.Example(phrase="Blue curtains with sailboats on them.", keywords=['blue curtains with sailboats on them', 'blue curtains', 'sailboats', 'curtains', 'Furnishings']).with_inputs('phrase'),
-        dspy.Example(phrase="a white pillow is on the couch.", keywords=['a white pillow is on the couch', 'white pillow', 'pillow', 'couch', 'bedding']).with_inputs('phrase'),
-        dspy.Example(phrase="a teddy bear lies against a pillow.", keywords=['a teddy bear lies against a pillow', 'teddy bear', 'pillow', 'toy']).with_inputs('phrase'),
-        dspy.Example(phrase="The decorative piece on the right side of the table", keywords=['The decorative piece on the right side of the table', 'decorative piece', 'table']).with_inputs('phrase')
-    ]
+    # Training_set = [
+    #     dspy.Example(phrase="blue curtains with sailboats on them.", keywords=['blue curtains with sailboats on them', 'blue curtains', 'sailboats', 'curtains', 'Furnishings']).with_inputs('phrase'),
+    #     dspy.Example(phrase="a white pillow is on the couch.", keywords=['a white pillow is on the couch', 'white pillow', 'pillow', 'couch', 'bedding']).with_inputs('phrase'),
+    #     dspy.Example(phrase="a teddy bear lies against a pillow.", keywords=['a teddy bear lies against a pillow', 'teddy bear', 'pillow', 'toy']).with_inputs('phrase'),
+    #     dspy.Example(phrase="the decorative piece on the right side of the table", keywords=['The decorative piece on the right side of the table', 'decorative piece', 'table']).with_inputs('phrase')
+    # ]
     
     # 2. 配置主干全局模型（干活的小模型）
     main_lm = dspy.LM(
@@ -67,30 +80,32 @@ if __name__ == "__main__":
     )
     dspy.configure(lm=main_lm)
 
-    # 1. 定义更强的大模型（27B），它既当裁判，又当“提示词编写者”
-    judge_lm = dspy.LM(
-        model="openai/qwen3.5_27", 
-        api_base="http://127.0.0.1:8082/v1",
-        api_key="unused",
-        cache=False, 
-    )
-    # 3. 初始化 COPRO 优化器
-    # 巧妙之处：我们把 prompt_model 显式设置为强大的 judge_lm
-    # 这样就可以用 27B 的聪明模型来思考和编写新 Prompt，用小模型来跑分测试
-    teleprompter = COPRO(
-        metric=keyword_metric, 
-        prompt_model=judge_lm, # 专职写 Prompt 的模型
-        breadth=4,             # 每次尝试生成 5 种不同的 Prompt 版本（如果觉得慢可以改小点）
-        depth=10                # 迭代优化 3 轮
-    )
+    # # 1. 定义更强的大模型（27B），它既当裁判，又当“提示词编写者”
+    # judge_lm = dspy.LM(
+    #     model="openai/qwen3.5_27", 
+    #     api_base="http://127.0.0.1:8082/v1",
+    #     api_key="unused",
+    #     cache=False, 
+    # )
+    # # 3. 初始化 COPRO 优化器
+    # # 巧妙之处：我们把 prompt_model 显式设置为强大的 judge_lm
+    # # 这样就可以用 27B 的聪明模型来思考和编写新 Prompt，用小模型来跑分测试
+    # teleprompter = COPRO(
+    #     metric=keyword_metric, 
+    #     prompt_model=judge_lm, # 专职写 Prompt 的模型
+    #     breadth=4,             # 每次尝试生成 5 种不同的 Prompt 版本（如果觉得慢可以改小点）
+    #     depth=10                # 迭代优化 3 轮
+    # )
 
-    # 4. 运行编译
-    # COPRO 的多线程设置放在了 eval_kwargs 里
-    optimized_program = teleprompter.compile(
-        dspy.Predict(PromptProcessor), 
-        trainset=Training_set, 
-        eval_kwargs={"num_threads": 2, "display_progress": True}
-    )
+    # # 4. 运行编译
+    # # COPRO 的多线程设置放在了 eval_kwargs 里
+    # optimized_program = teleprompter.compile(
+    #     dspy.Predict(PromptProcessor), 
+    #     trainset=Training_set, 
+    #     eval_kwargs={"num_threads": 2, "display_progress": True}
+    # )
 
-    # 5. 保存结果
-    optimized_program.save('./LLMs/optimized_prompt.json')
+    # # 5. 保存结果
+    # optimized_program.save('./LLMs/optimized_prompt.json')
+    gen_prompt = dspy.Predict(PromptProcessor)
+    print(gen_prompt(phrase="A computer speaker sitting on the desk").keywords)
