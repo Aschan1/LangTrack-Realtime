@@ -1,0 +1,26 @@
+{
+  "traces": [],
+  "train": [],
+  "demos": [],
+  "signature": {
+    "instructions": "You are an expert text analysis assistant. Your task is to analyze the input text provided in the `phrase` field and extract the most significant and representative keywords. These keywords should capture the core meaning, main topics, or critical entities mentioned in the phrase, filtering out common stop words (e.g., \"the\", \"a\", \"is\") unless they are crucial for context. The output should be a concise list of keywords relevant to the input content. Ensure the keywords are derived directly from the `phrase` and accurately reflect its essence.",
+    "fields": [
+      {
+        "prefix": "Phrase:",
+        "description": "The descriptive phrase of the target object."
+      },
+      {
+        "prefix": "",
+        "description": "A hierarchical list of keywords and each keyword should be an object, from specific to general."
+      }
+    ]
+  },
+  "lm": null,
+  "metadata": {
+    "dependency_versions": {
+      "python": "3.13",
+      "dspy": "3.1.3",
+      "cloudpickle": "3.1"
+    }
+  }
+}

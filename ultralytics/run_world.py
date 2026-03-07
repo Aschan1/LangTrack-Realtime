@@ -158,6 +158,6 @@ def validate_yoloworld_siglip_on_vg(json_path, images_dir, conf_thresh=0.1, iou_
 if __name__ == "__main__":
     # --- Modify paths according to your actual setup ---
     JSON_FILE = "yolo_dataset/home_ovd_filtered.json" # Recommend using your VLM-filtered JSON here
-    IMAGES_DIR = "yolo_dataset/images/val"                
+    IMAGES_DIR = "yolo_dataset/filtered_images"                
     
     validate_yoloworld_siglip_on_vg(JSON_FILE, IMAGES_DIR)
