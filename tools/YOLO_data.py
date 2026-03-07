@@ -3,16 +3,16 @@ import os
 from PIL import Image
 
 def convert_ovd_to_yolo(json_path, images_dir, output_dir):
-    # 1. 读取 JSON 数据
+    # 1. Read JSON data
     with open(json_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
         
-    # 如果最外层是字典，可能是 {"annotations": [...]} 结构，适配一下
+    # If the outermost is a dict, it might be {"annotations": [...]} structure, adapt it
     if isinstance(data, dict):
         if 'annotations' in data:
             data = data['annotations']
         else:
-            # 尝试获取字典里第一个列表类型的值
+            # Try to get the first list-type value in the dict
             for key, val in data.items():
                 if isinstance(val, list):
                     data = val
@@ -21,11 +21,11 @@ def convert_ovd_to_yolo(json_path, images_dir, output_dir):
     labels_dir = os.path.join(output_dir, 'labels')
     os.makedirs(labels_dir, exist_ok=True)
     
-    # 2. 收集所有独一无二的 phrase 作为类别 (YOLO-World 支持自然语言 Prompt)
+    # 2. Collect all unique phrases as categories (YOLO-World supports natural language prompts)
     unique_phrases = list(set([item['phrase'] for item in data if 'phrase' in item]))
     phrase_to_id = {phrase: idx for idx, phrase in enumerate(unique_phrases)}
     
-    # 3. 按 image_id 对标注进行分组
+    # 3. Group annotations by image_id
     img_to_anns = {}
     for item in data:
         img_id = str(item['image_id'])
@@ -33,13 +33,13 @@ def convert_ovd_to_yolo(json_path, images_dir, output_dir):
             img_to_anns[img_id] = []
         img_to_anns[img_id].append(item)
         
-    # 4. 遍历处理每张图片
+    # 4. Iterate and process each image
     processed_count = 0
     missing_images = 0
     
     for img_id, anns in img_to_anns.items():
-        # 推测图片文件名，常见格式可能是 1.jpg 或 000001.jpg
-        # 这里假设直接用 id + .jpg，如果你的图片名字是别的格式（比如 00001.jpg），请在这里修改 ↓
+        # Infer image filename, common formats might be 1.jpg or 000001.jpg
+        # Here assume directly id + .jpg, if your image names are in other formats (e.g. 00001.jpg), please modify here ↓
         img_filename = f"{img_id}.jpg" 
         img_path = os.path.join(images_dir, img_filename)
         
@@ -47,11 +47,11 @@ def convert_ovd_to_yolo(json_path, images_dir, output_dir):
             missing_images += 1
             continue
             
-        # 获取整张图片的宽高
+        # Get the width and height of the whole image
         with Image.open(img_path) as img:
             img_w, img_h = img.size
             
-        # 准备写入对应的 txt 标签文件
+        # Prepare to write the corresponding txt label file
         txt_filename = f"{img_id}.txt"
         txt_filepath = os.path.join(labels_dir, txt_filename)
         
@@ -62,46 +62,46 @@ def convert_ovd_to_yolo(json_path, images_dir, output_dir):
                 w = ann['width']
                 h = ann['height']
                 
-                # YOLO 需要中心点坐标，并进行归一化
+                # YOLO needs center point coordinates and normalization
                 x_center = (x + w / 2.0) / img_w
                 y_center = (y + h / 2.0) / img_h
                 norm_w = w / img_w
                 norm_h = h / img_h
                 
-                # 防越界保护
+                # Anti-out-of-bounds protection
                 x_center, y_center = max(0, min(1, x_center)), max(0, min(1, y_center))
                 norm_w, norm_h = max(0, min(1, norm_w)), max(0, min(1, norm_h))
                 
                 class_id = phrase_to_id[ann['phrase']]
                 
-                # 写入: class_id x_center y_center width height
+                # Write: class_id x_center y_center width height
                 txt_f.write(f"{class_id} {x_center:.6f} {y_center:.6f} {norm_w:.6f} {norm_h:.6f}\n")
                 
         processed_count += 1
         
-    # 5. 生成 YOLO-World 专用的 dataset.yaml
+    # 5. Generate YOLO-World specific dataset.yaml
     yaml_path = os.path.join(output_dir, 'dataset.yaml')
     with open(yaml_path, 'w', encoding='utf-8') as f:
-        f.write("path: ./yolo_dataset  # 请根据实际情况修改路径\n")
-        f.write("train: images/train   # 训练集图片\n")
-        f.write("val: images/val       # 验证集图片\n\n")
+        f.write("path: ./yolo_dataset  # Please modify the path according to your actual situation\n")
+        f.write("train: images/train   # Training set images\n")
+        f.write("val: images/val       # Validation set images\n\n")
         f.write("names:\n")
         for phrase, class_id in phrase_to_id.items():
-            # YOLO-World 会把这里的完整句子当作 Prompt
-            # 处理一下单引号，避免 yaml 解析报错
+            # YOLO-World will use the complete sentence here as Prompt
+            # Handle single quotes to avoid yaml parsing errors
             safe_phrase = phrase.replace("'", "''")
             f.write(f"  {class_id}: '{safe_phrase}'\n")
             
-    print(f"\n✅ 转换完毕！")
-    print(f"📊 共提取了 {len(unique_phrases)} 个独特的文本短语(类别)。")
-    print(f"🖼️ 成功处理了 {processed_count} 张图片的标签。")
+    print(f"\n✅ Conversion completed!")
+    print(f"📊 Extracted {len(unique_phrases)} unique text phrases (categories).")
+    print(f"🖼️ Successfully processed labels for {processed_count} images.")
     if missing_images > 0:
-        print(f"⚠️ 找不到 {missing_images} 张图片，已跳过。请检查 images_dir 路径或图片命名格式。")
+        print(f"⚠️ {missing_images} images not found, skipped. Please check images_dir path or image naming format.")
 
 if __name__ == "__main__":
-    # === 请修改这里的路径 ===
-    JSON_FILE = "home_ovd_samples.json"          # 你的 JSON 文件路径
-    IMAGES_DIR = "/media/chen/study/VisualGenome/Home_data/" # 存放你原始图片的文件夹路径（必须有，为了读取图片尺寸）
-    OUTPUT_DIR = "./yolo_dataset"                # 转换后结果存放的目录
+    # === Please modify the paths here ===
+    JSON_FILE = "home_ovd_samples.json"          # Your JSON file path
+    IMAGES_DIR = "/media/chen/study/VisualGenome/Home_data/" # Folder path containing your original images (must have, to read image sizes)
+    OUTPUT_DIR = "./yolo_dataset"                # Directory to store the converted results
     
     convert_ovd_to_yolo(JSON_FILE, IMAGES_DIR, OUTPUT_DIR)
