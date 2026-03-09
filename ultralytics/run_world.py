@@ -1,14 +1,15 @@
 import json
 import os
 import torch
-import cv2
+import dspy
+import ast
 from tqdm import tqdm
 from PIL import Image
 from ultralytics import YOLO
 from transformers import AutoProcessor, AutoModel
+from LLMs.get_prompt import PromptProcessor
 
 def calculate_iou(box1, box2):
-    """Calculate Intersection over Union (IoU) of two bounding boxes. Box format: [x_min, y_min, x_max, y_max]"""
     x1_inter = max(box1[0], box2[0])
     y1_inter = max(box1[1], box2[1])
     x2_inter = min(box1[2], box2[2])
@@ -24,46 +25,45 @@ def calculate_iou(box1, box2):
     return iou
 
 def siglip_verify(crop_img, phrase, processor, model, device):
-    """
-    Use SigLIP to verify if the cropped image matches the given phrase.
-    It compares the target phrase against negative prompts.
-    """
-    # Texts to compare: target phrase vs negative prompts
     texts = [phrase, "blank background", "a picture of a random object"]
-    
-    # Process inputs for SigLIP
     inputs = processor(text=texts, images=crop_img, padding="max_length", return_tensors="pt").to(device)
     
     with torch.no_grad():
         outputs = model(**inputs)
         
     logits_per_image = outputs.logits_per_image
-    # SigLIP uses sigmoid rather than softmax
     probs = torch.sigmoid(logits_per_image).squeeze() 
     
-    # Check if the target phrase has the highest probability among the three
     max_idx = torch.argmax(probs).item()
     return max_idx == 0
 
-def validate_yoloworld_siglip_on_vg(json_path, images_dir, conf_thresh=0.1, iou_thresh=0.5):
+def inference(json_path, images_dir, conf_thresh=0.01, iou_thresh=0.5, validation=False):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
-    # 1. Load YOLO-World model
     print("Loading YOLO-World...")
-    yolo_model = YOLO("ultralytics/yolov8s-worldv2.pt")
+    yolo_model = YOLO("ultralytics/yolov8x-worldv2.pt")
     yolo_model.to(device)
 
-    # 2. Load SigLIP model
     print("Loading SigLIP...")
     siglip_processor = AutoProcessor.from_pretrained("/home/chen/workplace/LangTrack-Realtime/ultralytics/SigLIP/siglip2-base-patch16-224")
     siglip_model = AutoModel.from_pretrained("/home/chen/workplace/LangTrack-Realtime/ultralytics/SigLIP/siglip2-base-patch16-224").to(device)
     siglip_model.eval()
 
-    # 3. Load annotation data
+    prompt_processor = None
+    if not validation:
+        print("Initializing LLM Prompt Processor...")
+        prompt_processor = dspy.Predict(PromptProcessor)
+        try:
+            prompt_processor.load('./LLMs/optimized_prompt.json')
+            print("Loaded optimized_prompt.json successfully!")
+        except Exception as e:
+            print(f"Warning: Did not load optimized prompt. Error: {e}")
+    else:
+        print("Validation mode ON: LLM is disabled.")
+
     with open(json_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
         
-    # Group annotations by image_id
     img_to_anns = {}
     for item in tqdm(data, desc='Loading JSON Doc'):
         img_id = str(item['image_id'])
@@ -76,77 +76,94 @@ def validate_yoloworld_siglip_on_vg(json_path, images_dir, conf_thresh=0.1, iou_
     
     print(f"Validation Start! {len(img_to_anns)} Pics in total...")
     
-    # 4. Dynamic validation per image with dual filtering
     for img_id, anns in tqdm(img_to_anns.items(), desc="Evaluating"):
         img_path = os.path.join(images_dir, f"{img_id}.jpg")
         if not os.path.exists(img_path):
             continue
-            
-        # Get all unique phrases for the current image
-        phrases = list(set([ann['phrase'] for ann in anns]))
-        phrase_to_idx = {p: i for i, p in enumerate(phrases)}
         
-        # Open PIL image for SigLIP cropping later
         try:
             img_pil = Image.open(img_path).convert('RGB')
         except Exception as e:
-            print(f"Error loading image {img_path}: {e}")
             continue
 
-        # [Stage 1] YOLO-World prediction
-        yolo_model.set_classes(phrases)
+        # ==========================================
+        # [Stage 1] LLM Processing & YOLO Prediction
+        # ==========================================
+        keyword_to_phrases = {}
+        phrase_to_idx = {}
+
+        #Some complex logic to build the mapping from keywords to original phrases and phrase to class index
+        for ann in anns:
+            phrase = ann['phrase']  
+            if phrase not in phrase_to_idx:
+                phrase_to_idx[phrase] = len(phrase_to_idx) 
+            
+            keywords = ann['keywords'] 
+            
+            if keywords['target'] not in keyword_to_phrases:
+                keyword_to_phrases[keywords['target']] = set() # Use a set to prevent duplicates
+
+            keyword_to_phrases[keywords['target']].add(phrase)
+
+        all_yolo_classes = list(keyword_to_phrases.keys())
+        
+        if len(all_yolo_classes) > 0:
+            yolo_model.set_classes(all_yolo_classes)
+        else:
+            continue 
+        
         results = yolo_model.predict(img_path, conf=conf_thresh, verbose=False)
         result = results[0]
         
         raw_pred_boxes = result.boxes.xyxy.cpu().numpy()
         raw_pred_classes = result.boxes.cls.cpu().numpy()
-        
-        # [Stage 2] SigLIP Filtering
+
+        # ==========================================
+        # [Stage 2] SigLIP Filtering & Disambiguation
+        # ==========================================
         filtered_pred_boxes = []
-        filtered_pred_classes = []
-        
+        filtered_pred_classes = [] 
+
         for p_box, p_cls in zip(raw_pred_boxes, raw_pred_classes):
-            phrase = phrases[int(p_cls)]
+            detected_keyword = all_yolo_classes[int(p_cls)]
             
-            # Get integer coordinates for cropping
+            # Now returns a list/set of strings instead of integers
+            possible_original_phrases = keyword_to_phrases[detected_keyword]
+            
             x1, y1, x2, y2 = map(int, p_box)
-            
-            # Basic sanity check to avoid invalid crops
             if x2 <= x1 or y2 <= y1:
                 continue
                 
             crop_img = img_pil.crop((x1, y1, x2, y2))
             
-            # Verify via SigLIP
-            is_valid = siglip_verify(crop_img, phrase, siglip_processor, siglip_model, device)
-            
-            if is_valid:
-                filtered_pred_boxes.append(p_box)
-                filtered_pred_classes.append(p_cls)
+            for orig_phrase in possible_original_phrases:
+                # orig_phrase is safely a string now
+                is_valid = siglip_verify(crop_img, orig_phrase, siglip_processor, siglip_model, device)
+                
+                if is_valid:
+                    filtered_pred_boxes.append(p_box)
+                    filtered_pred_classes.append(phrase_to_idx[orig_phrase])
 
-        # [Stage 3] Evaluation using filtered bounding boxes
+        # ==========================================
+        # [Stage 3] Evaluation
+        # ==========================================
         for ann in anns:
             total_targets += 1
-            
-            # Ground truth box
             x, y, w, h = ann['x'], ann['y'], ann['width'], ann['height']
             gt_box = [x, y, x + w, y + h]
-            gt_phrase = ann['phrase']
-            gt_cls_id = phrase_to_idx[gt_phrase]
+            gt_cls_id = phrase_to_idx[ann['phrase']]
             
-            # Search for matches in the SigLIP-filtered predictions
             is_matched = False
             for p_box, p_cls in zip(filtered_pred_boxes, filtered_pred_classes):
                 if int(p_cls) == gt_cls_id:
                     iou = calculate_iou(gt_box, p_box)
                     if iou >= iou_thresh:
                         is_matched = True
-                        break # This ground truth target was successfully matched
+                        break 
             
             if is_matched:
                 matched_targets += 1
                 
-    # 5. Calculate and output final metrics
     recall = matched_targets / total_targets if total_targets > 0 else 0
     print("\n" + "="*40)
     print("Validation with SigLIP Filtering Succeeded!")
@@ -156,8 +173,19 @@ def validate_yoloworld_siglip_on_vg(json_path, images_dir, conf_thresh=0.1, iou_
     print("="*40)
 
 if __name__ == "__main__":
-    # --- Modify paths according to your actual setup ---
-    JSON_FILE = "yolo_dataset/home_ovd_filtered.json" # Recommend using your VLM-filtered JSON here
+    IS_VALIDATION = True
+
+    # ONLY FOR INFERENCE, you will skip it if you run the validation.
+    if not IS_VALIDATION:
+        main_lm = dspy.LM(
+            model="openai/qwen3.5", 
+            api_base="http://127.0.0.1:8080/v1",
+            api_key="unused",
+            cache=False, 
+        )
+        dspy.configure(lm=main_lm)
+
+    JSON_FILE = "yolo_dataset/home_ovd_keywords_json_full.json" 
     IMAGES_DIR = "yolo_dataset/filtered_images"                
     
-    validate_yoloworld_siglip_on_vg(JSON_FILE, IMAGES_DIR)
+    inference(JSON_FILE, IMAGES_DIR, validation=IS_VALIDATION)
