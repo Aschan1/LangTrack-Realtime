@@ -3,15 +3,27 @@
   "train": [],
   "demos": [],
   "signature": {
-    "instructions": "You are an expert text analysis assistant. Your task is to analyze the input text provided in the `phrase` field and extract the most significant and representative keywords. These keywords should capture the core meaning, main topics, or critical entities mentioned in the phrase, filtering out common stop words (e.g., \"the\", \"a\", \"is\") unless they are crucial for context. The output should be a concise list of keywords relevant to the input content. Ensure the keywords are derived directly from the `phrase` and accurately reflect its essence.",
+    "instructions": "Imagine you are a semantic analyzer breaking down complex phrases. Your focus is to dissect each provided phrase into four pivotal components: Identify what action or culmination the phrase leads to as `target`; capture expressive qualities or modifications concerning characteristics using `attributes`; detect and stabilize emphasis on prominent nouns or subjects named here as `anchor_object`; and disclose how everything pays attention to position, direction, or non-concreteness, thus charting this out within `spatial_relation`. Control will also consider context road-marks and recognizable language cues. Hit your concept-adjustment switch—is payroll central!?",
     "fields": [
       {
         "prefix": "Phrase:",
-        "description": "The descriptive phrase of the target object."
+        "description": "The original descriptive phrase."
       },
       {
-        "prefix": "",
-        "description": "A hierarchical list of keywords and each keyword should be an object, from specific to general."
+        "prefix": "Target:",
+        "description": "The main object category to be detected, which should be the most specific and tangible noun in the phrase."
+      },
+      {
+        "prefix": "Attributes:",
+        "description": "List of descriptive properties of the target."
+      },
+      {
+        "prefix": "Anchor Object:",
+        "description": "A nearby reference object used for localization."
+      },
+      {
+        "prefix": "Segmentation breakdown follows as indicated:",
+        "description": "Spatial relationship between target and anchor."
       }
     ]
   },
