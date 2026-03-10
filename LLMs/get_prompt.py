@@ -16,15 +16,15 @@ def _listify(x):
         return []
     if isinstance(x, list):
         return [str(i).strip() for i in x if str(i).strip()]
-    # 兼容模型偶尔输出成字符串
+    # Compatible with models occasionally outputting as strings
     if isinstance(x, str):
-        # 尝试按逗号/分号切分
+        # Try splitting by comma/semicolon
         parts = re.split(r"[;,，；]\s*", x.strip())
         return [p for p in parts if p]
     return [str(x).strip()] if str(x).strip() else []
 
 # ==========================================
-# 1. 更新裁判的 Signature (适配新的多字段结构)
+# 1. Update the Judge's Signature (adapt to new multi-field structure)
 # ==========================================
 class AssessExtraction(dspy.Signature):
     phrase: str = dspy.InputField(desc="The original descriptive phrase")
@@ -33,37 +33,37 @@ class AssessExtraction(dspy.Signature):
     assessment_answer: bool = dspy.OutputField(desc="Output True if extraction meets the criteria specified, otherwise False.")
 
 # ==========================================
-# 2. 更新评分函数 Metric
+# 2. Update the Scoring Function Metric
 # ==========================================
 def structured_metric(example, pred, trace=None):
     phrase = example.phrase
 
-    # 取出预测字段（你的 Predict(PromptProcessor) 会给这些）
+    # Extract predicted fields (your Predict(PromptProcessor) will provide these)
     target = _normalize(getattr(pred, "target", None))
     attributes = _listify(getattr(pred, "attributes", None))
     anchor_object = _normalize(getattr(pred, "anchor_object", None))
     spatial_relation = _normalize(getattr(pred, "spatial_relation", None))
 
-    # ========= 第一关：硬性规则 =========
-    # 1) target 必须存在
+    # ========= First Level: Hard Rules =========
+    # 1) target must exist
     if not target:
         return 0.0
 
-    # 2) attributes 必须是 list（或可转成 list），且不应过长（避免胡乱堆砌）
+    # 2) attributes must be a list (or convertible to list), and should not be too long (avoid random piling)
     if not isinstance(attributes, list):
         return 0.0
     if len(attributes) > 8:
         return 0.0
 
-    # 3) anchor_object 与 spatial_relation 必须成对：要么都 None，要么都非 None
+    # 3) anchor_object and spatial_relation must be paired: either both None or both not None
     if (anchor_object is None) ^ (spatial_relation is None):
         return 0.0
 
-    # 4) 目标尽量出现在原句中（放宽：如果是同义改写，交给后面的 LLM 裁判）
-    #    这里不做硬杀，只给基础分，避免同义词导致全 0
+    # 4) Target should appear in the original sentence as much as possible (relaxed: if it's synonymous rewriting, leave it to the subsequent LLM judge)
+    #    No hard kill here, just give base score to avoid synonyms causing all 0
     base_score = 1.0
 
-    # 5) attributes 不应包含明显空间介词/位置短语（这些应进 spatial_relation）
+    # 5) attributes should not contain obvious spatial prepositions/location phrases (these should go into spatial_relation)
     forbidden_attr = {
         "left", "right", "top", "bottom", "above", "below", "under", "over",
         "on", "in", "inside", "outside", "next to", "beside", "near", "against",
@@ -73,8 +73,8 @@ def structured_metric(example, pred, trace=None):
     if any(a in forbidden_attr for a in attr_lower):
         return 0.0
 
-    # ========= 第二关：LLM 裁判语义检查 =========
-    # 把预测组织成“可读 JSON 字符串”让裁判判断
+    # ========= Second Level: LLM Judge Semantic Check =========
+    # Organize predictions into "readable JSON string" for judge to determine
     pred_dict = {
         "target": target,
         "attributes": attributes,
@@ -83,7 +83,7 @@ def structured_metric(example, pred, trace=None):
     }
     pred_str = json.dumps(pred_dict, ensure_ascii=False)
 
-    # 裁判问题（你可按数据集特点继续加/减）
+    # Judge questions (you can add/subtract based on dataset characteristics)
     q_target = (
         f"Given the phrase '{phrase}', is '{target}' the most specific, tangible, visually detectable main object "
         f"(a concrete noun), and not an attribute, action, or abstract concept?"
@@ -123,16 +123,16 @@ def structured_metric(example, pred, trace=None):
         + int(judge_consistency.assessment_answer)
     )
 
-    # trace 模式下返回 bool（保持你原先的逻辑风格）
+    # Return bool in trace mode (maintain your original logic style)
     if trace is not None:
         return total_score >= 5.0
 
-    # 归一化到 0~1
+    # Normalize to 0~1
     return total_score / 5.0
 
 
 # ==========================================
-# 3. 修复了 dec -> desc 的 PromptProcessor
+# 3. Fixed dec -> desc in PromptProcessor
 # ==========================================
 class PromptProcessor(dspy.Signature):
     phrase: str = dspy.InputField(desc="The original descriptive phrase.")
@@ -150,7 +150,7 @@ if __name__ == "__main__":
         dspy.Example(phrase="the decorative piece on the right side of the table", target="decorative piece", attributes=[], anchor_object="table", spatial_relation="on the right side").with_inputs('phrase')
     ]
 
-    # 配置主干全局模型
+    # Configure the backbone global model
     main_lm = dspy.LM(
         model="openai/qwen3.5", 
         api_base="http://127.0.0.1:8080/v1",
@@ -159,10 +159,10 @@ if __name__ == "__main__":
     )
     dspy.configure(lm=main_lm)
 
-    # 定义更强的裁判模型
+    # Define a stronger judge model
     judge_lm = dspy.LM("openai/gpt-4o")
 
-    # 初始化 COPRO 优化器 (注意这里的 metric 换成了 extraction_metric)
+    # Initialize COPRO optimizer (note that metric here is changed to extraction_metric)
     teleprompter = COPRO(
         metric=structured_metric, 
         prompt_model=judge_lm, 
@@ -170,7 +170,7 @@ if __name__ == "__main__":
         depth=2               
     )
 
-    # 运行编译
+    # Run compilation
     optimized_program = teleprompter.compile(
         dspy.Predict(PromptProcessor), 
         trainset=Training_set, 
@@ -180,6 +180,6 @@ if __name__ == "__main__":
     optimized_program.save("./LLMs/optimized_prompt.json")
     print("✅ 优化完成并已保存到 optimized_prompt.json")
 
-    # 测试输出
+    # Test output
     gen_json = optimized_program
     print(gen_json(phrase="A metal framed table with a glass top"))
