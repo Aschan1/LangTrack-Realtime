@@ -1,0 +1,458 @@
+
+[{
+    "region_id": 1397,
+    "width": 246,
+    "height": 252,
+    "image_id": 4,
+    "phrase": "Blue curtains with sailboats on them.",
+    "y": 6,
+    "x": 381,
+    "keywords": {
+      "target": "curtains",
+      "attributes": [
+        "blue",
+        "with sailboats on them"
+      ],
+      "anchor_object": null,
+      "spatial_relation": null
+    }
+  },
+  {
+    "region_id": 1398,
+    "width": 79,
+    "height": 155,
+    "image_id": 4,
+    "phrase": "A black chair with blue padding.",
+    "y": 217,
+    "x": 394,
+    "keywords": {
+      "target": "chair",
+      "attributes": [
+        "black",
+        "blue padding"
+      ],
+      "anchor_object": null,
+      "spatial_relation": null
+    }
+  },
+  {
+    "region_id": 1399,
+    "width": 94,
+    "height": 77,
+    "image_id": 4,
+    "phrase": "A white sofa pillow. ",
+    "y": 229,
+    "x": 191,
+    "keywords": {
+      "target": "sofa pillow",
+      "attributes": [
+        "white"
+      ],
+      "anchor_object": "sofa",
+      "spatial_relation": "part of"
+    }
+  },
+  {
+    "region_id": 1400,
+    "width": 141,
+    "height": 82,
+    "image_id": 4,
+    "phrase": "Plush gray carpet on the floor.",
+    "y": 396,
+    "x": 119,
+    "keywords": {
+      "target": "carpet",
+      "attributes": [
+        "plush",
+        "gray"
+      ],
+      "anchor_object": "floor",
+      "spatial_relation": "on"
+    }
+  },
+  {
+    "region_id": 1401,
+    "width": 57,
+    "height": 122,
+    "image_id": 4,
+    "phrase": "A wooden desk.",
+    "y": 350,
+    "x": 0,
+    "keywords": {
+      "target": "desk",
+      "attributes": [
+        "wooden"
+      ],
+      "anchor_object": null,
+      "spatial_relation": null
+    }
+  },
+  {
+    "region_id": 1447,
+    "width": 100,
+    "height": 80,
+    "image_id": 4,
+    "phrase": "a white pillow is on the couch",
+    "y": 224,
+    "x": 187,
+    "keywords": {
+      "target": "pillow",
+      "attributes": [
+        "white"
+      ],
+      "anchor_object": "couch",
+      "spatial_relation": "on"
+    }
+  },
+  {
+    "region_id": 1448,
+    "width": 49,
+    "height": 53,
+    "image_id": 4,
+    "phrase": "a teddy bear lies against a pillow",
+    "y": 254,
+    "x": 213,
+    "keywords": {
+      "target": "teddy bear",
+      "attributes": [
+        "lies",
+        "against"
+      ],
+      "anchor_object": "pillow",
+      "spatial_relation": "against"
+    }
+  },
+  {
+    "region_id": 1449,
+    "width": 94,
+    "height": 281,
+    "image_id": 4,
+    "phrase": "a blue curtain is drawn",
+    "y": 5,
+    "x": 364,
+    "keywords": {
+      "target": "curtain",
+      "attributes": [
+        "blue",
+        "drawn"
+      ],
+      "anchor_object": null,
+      "spatial_relation": null
+    }
+  },
+  {
+    "region_id": 1450,
+    "width": 224,
+    "height": 113,
+    "image_id": 4,
+    "phrase": "the couch is mainly purple in color",
+    "y": 220,
+    "x": 122,
+    "keywords": {
+      "target": "couch",
+      "attributes": [
+        "mainly purple in color"
+      ],
+      "anchor_object": null,
+      "spatial_relation": null
+    }
+  },
+  {
+    "region_id": 1451,
+    "width": 196,
+    "height": 195,
+    "image_id": 4,
+    "phrase": "the top of the table is made of glass",
+    "y": 233,
+    "x": 415,
+    "keywords": {
+      "target": "glass table top",
+      "attributes": [
+        "made of glass",
+        "top"
+      ],
+      "anchor_object": "table",
+      "spatial_relation": "on top of"
+    }
+  },
+  {
+    "region_id": 1497,
+    "width": 122,
+    "height": 92,
+    "image_id": 4,
+    "phrase": "A stuffed animal against a white pillow",
+    "y": 219,
+    "x": 181,
+    "keywords": {
+      "target": "stuffed animal",
+      "attributes": [
+        "stuffed"
+      ],
+      "anchor_object": "white pillow",
+      "spatial_relation": "against"
+    }
+  },
+  {
+    "region_id": 1498,
+    "width": 214,
+    "height": 57,
+    "image_id": 4,
+    "phrase": "A glass table top near a window",
+    "y": 242,
+    "x": 424,
+    "keywords": {
+      "target": "table top",
+      "attributes": [
+        "glass"
+      ],
+      "anchor_object": "window",
+      "spatial_relation": "near"
+    }
+  },
+  {
+    "region_id": 1499,
+    "width": 266,
+    "height": 152,
+    "image_id": 4,
+    "phrase": "A purple futon with a wooden frame",
+    "y": 209,
+    "x": 111,
+    "keywords": {
+      "target": "futon",
+      "attributes": [
+        "purple",
+        "wooden frame"
+      ],
+      "anchor_object": null,
+      "spatial_relation": null
+    }
+  },
+  {
+    "region_id": 1500,
+    "width": 96,
+    "height": 168,
+    "image_id": 4,
+    "phrase": "A slender chair next to the table",
+    "y": 205,
+    "x": 380,
+    "keywords": {
+      "target": "chair",
+      "attributes": [
+        "slender"
+      ],
+      "anchor_object": "table",
+      "spatial_relation": "next to"
+    }
+  },
+  {
+    "region_id": 1501,
+    "width": 115,
+    "height": 170,
+    "image_id": 4,
+    "phrase": "A sliding glass door to a patio",
+    "y": 141,
+    "x": 367,
+    "keywords": {
+      "target": "glass door",
+      "attributes": [
+        "sliding",
+        "to a patio"
+      ],
+      "anchor_object": "patio",
+      "spatial_relation": "to"
+    }
+  },
+  {
+    "region_id": 1547,
+    "width": 172,
+    "height": 85,
+    "image_id": 4,
+    "phrase": "curtains are blue in colour",
+    "y": 36,
+    "x": 429,
+    "keywords": {
+      "target": "curtains",
+      "attributes": [
+        "blue",
+        "in colour"
+      ],
+      "anchor_object": null,
+      "spatial_relation": null
+    }
+  },
+  {
+    "region_id": 1599,
+    "width": 230,
+    "height": 206,
+    "image_id": 4,
+    "phrase": "glass topped dining table",
+    "y": 236,
+    "x": 409,
+    "keywords": {
+      "target": "dining table",
+      "attributes": [
+        "glass topped"
+      ],
+      "anchor_object": null,
+      "spatial_relation": null
+    }
+  },
+  {
+    "region_id": 1601,
+    "width": 48,
+    "height": 157,
+    "image_id": 4,
+    "phrase": "standing black torchiere lamp",
+    "y": 62,
+    "x": 215,
+    "keywords": {
+      "target": "torchiere lamp",
+      "attributes": [
+        "standing",
+        "black"
+      ],
+      "anchor_object": null,
+      "spatial_relation": null
+    }
+  },
+  {
+    "region_id": 1649,
+    "width": 154,
+    "height": 79,
+    "image_id": 4,
+    "phrase": "purple carpet is clean",
+    "y": 378,
+    "x": 248,
+    "keywords": {
+      "target": "carpet",
+      "attributes": [
+        "purple",
+        "clean"
+      ],
+      "anchor_object": null,
+      "spatial_relation": null
+    }
+  },
+  {
+    "region_id": 1651,
+    "width": 257,
+    "height": 175,
+    "image_id": 4,
+    "phrase": "purple cloth on the chair",
+    "y": 193,
+    "x": 114,
+    "keywords": {
+      "target": "cloth",
+      "attributes": [
+        "purple"
+      ],
+      "anchor_object": "chair",
+      "spatial_relation": "on"
+    }
+  },
+  {
+    "region_id": 1697,
+    "width": 245,
+    "height": 131,
+    "image_id": 4,
+    "phrase": "A purple couch. ",
+    "y": 210,
+    "x": 103,
+    "keywords": {
+      "target": "couch",
+      "attributes": [
+        "purple"
+      ],
+      "anchor_object": null,
+      "spatial_relation": null
+    }
+  },
+  {
+    "region_id": 1698,
+    "width": 47,
+    "height": 60,
+    "image_id": 4,
+    "phrase": "A stuffed teddy bear on a sofa.",
+    "y": 256,
+    "x": 215,
+    "keywords": {
+      "target": "stuffed teddy bear",
+      "attributes": [
+        "stuffed"
+      ],
+      "anchor_object": "sofa",
+      "spatial_relation": "on"
+    }
+  },
+  {
+    "region_id": 1699,
+    "width": 212,
+    "height": 32,
+    "image_id": 4,
+    "phrase": "A glass kitchen table. ",
+    "y": 256,
+    "x": 425,
+    "keywords": {
+      "target": "table",
+      "attributes": [
+        "glass",
+        "kitchen"
+      ],
+      "anchor_object": null,
+      "spatial_relation": null
+    }
+  },
+  {
+    "region_id": 1700,
+    "width": 59,
+    "height": 148,
+    "image_id": 4,
+    "phrase": "A black corner lamp. ",
+    "y": 60,
+    "x": 214,
+    "keywords": {
+      "target": "lamp",
+      "attributes": [
+        "black",
+        "corner"
+      ],
+      "anchor_object": null,
+      "spatial_relation": null
+    }
+  },
+  {
+    "region_id": 1701,
+    "width": 72,
+    "height": 107,
+    "image_id": 4,
+    "phrase": "A black television set. ",
+    "y": 228,
+    "x": 0,
+    "keywords": {
+      "target": "television set",
+      "attributes": [
+        "black"
+      ],
+      "anchor_object": null,
+      "spatial_relation": null
+    }
+  },
+  {
+    "region_id": 1747,
+    "width": 283,
+    "height": 187,
+    "image_id": 4,
+    "phrase": "A wooden loveseat with a purple cushion",
+    "y": 204,
+    "x": 90,
+    "keywords": {
+      "target": "loveseat",
+      "attributes": [
+        "wooden",
+        "has purple cushion"
+      ],
+      "anchor_object": "cushion",
+      "spatial_relation": "on"
+    }
+  }
+]
