@@ -5,14 +5,14 @@ import torch
 import cv2
 import numpy as np
 from PIL import Image
-from ultralytics import YOLO
+from ultralytics import YOLOE
 from transformers import AutoProcessor, AutoModel
 
 def siglip_get_score(crop_img, phrase, processor, model, device):
     """
-    修改为直接返回匹配概率的得分函数
+    Scoring function that directly returns the matching probability.
     """
-    text = f"a photo of {phrase}"
+    text = phrase
     
     inputs = processor(text=[text], images=crop_img, padding="max_length", return_tensors="pt").to(device)
     
@@ -22,20 +22,20 @@ def siglip_get_score(crop_img, phrase, processor, model, device):
     logits_per_image = outputs.logits_per_image
     prob = torch.sigmoid(logits_per_image).item() 
     
-    print(f"    [SigLIP] '{phrase}' 的匹配概率: {prob:.4f}")
+    print(f"    [SigLIP] Match probability for '{phrase}': {prob:.4f}")
     return prob
 
-def visualize_pipeline(img_path, original_phrase, keywords, yolo_model, siglip_processor, siglip_model, device, output_path, gt_box=None, conf_thresh=0.2, siglip_thresh=0.15):
-    # 读取图像 (OpenCV 用于画图，PIL 用于裁剪给 SigLIP)
+def visualize_pipeline(img_path, original_phrase, keywords, yolo_model, siglip_processor, siglip_model, device, output_path, gt_box=None, conf_thresh=0.2):
+    # Read image (OpenCV for drawing, PIL for cropping for SigLIP)
     cv_img = cv2.imread(img_path)
     if cv_img is None:
-        print(f"  [错误] 无法读取图片: {img_path}")
+        print(f"  [Error] Cannot read image: {img_path}")
         return
         
     pil_img = Image.fromarray(cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB))
     
     # ==========================================
-    # 优先画出 Ground Truth (黄色)
+    # Draw Ground Truth first (Yellow)
     # ==========================================
     if gt_box is not None:
         gx, gy, gw, gh = gt_box
@@ -48,7 +48,7 @@ def visualize_pipeline(img_path, original_phrase, keywords, yolo_model, siglip_p
         cv2.rectangle(cv_img, (gx1, max(0, gy1 - 25)), (gx1 + w, gy1), (0, 255, 255), -1)
         cv2.putText(cv_img, label_gt, (gx1, max(0, gy1 - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
 
-    # 1. 喂给 YOLO 所有的 keywords
+    # 1. Feed all keywords to YOLO
     yolo_model.set_classes(keywords)
     results = yolo_model.predict(img_path, conf=conf_thresh, verbose=False)[0]
     
@@ -56,10 +56,10 @@ def visualize_pipeline(img_path, original_phrase, keywords, yolo_model, siglip_p
     raw_pred_classes = results.boxes.cls.cpu().numpy()
     raw_pred_confs = results.boxes.conf.cpu().numpy()
 
-    print(f"  -> YOLO 共找到了 {len(raw_pred_boxes)} 个候选框。")
+    print(f"  -> YOLO found {len(raw_pred_boxes)} candidate boxes.")
 
     # ==========================================
-    # 2. [第一遍] 遍历所有候选框，获取得分并寻找最高分
+    # 2. [First pass] Iterate over all candidate boxes, get scores and find the highest score
     # ==========================================
     box_scores = []
     best_score = -1.0
@@ -68,29 +68,27 @@ def visualize_pipeline(img_path, original_phrase, keywords, yolo_model, siglip_p
     for idx, (p_box, p_cls, p_conf) in enumerate(zip(raw_pred_boxes, raw_pred_classes, raw_pred_confs)):
         x1, y1, x2, y2 = map(int, p_box)
         
-        # 防越界保护
+        # Out-of-bounds protection
         if x2 <= x1 or y2 <= y1:
             box_scores.append(-1.0)
             continue
             
         crop_img = pil_img.crop((x1, y1, x2, y2))
         
-        # 获取绝对概率
+        # Get absolute probability
         score = siglip_get_score(crop_img, original_phrase, siglip_processor, siglip_model, device)
         box_scores.append(score)
         
-        # 记录最高分
+        # Record the highest score
         if score > best_score:
             best_score = score
             best_idx = idx
 
-    # 判断是否有任何框及格（超过阈值）
-    any_passed = any(score > siglip_thresh for score in box_scores)
-    if not any_passed and best_score > 0:
-        print(f"  -> [保底机制触发] 所有框均未达到阈值 {siglip_thresh}，放行最高分框 (得分: {best_score:.4f})")
+    if best_idx != -1:
+        print(f"  -> Highest score selected (Score: {best_score:.4f})")
 
     # ==========================================
-    # 3. [第二遍] 根据得分和保底逻辑进行绘制
+    # 3. [Second pass] Draw boxes based on the highest score logic
     # ==========================================
     for idx, (p_box, p_cls, p_conf) in enumerate(zip(raw_pred_boxes, raw_pred_classes, raw_pred_confs)):
         score = box_scores[idx]
@@ -100,74 +98,69 @@ def visualize_pipeline(img_path, original_phrase, keywords, yolo_model, siglip_p
         x1, y1, x2, y2 = map(int, p_box)
         detected_keyword = keywords[int(p_cls)]
         
-        # --- 核心判断逻辑 ---
-        if any_passed:
-            # 正常模式：过阈值的都算 PASS
-            is_valid = score > siglip_thresh
-        else:
-            # 保底模式：只让得分最高的那个 PASS
-            is_valid = (idx == best_idx)
+        # --- Core judging logic (Only pass the highest score) ---
+        is_valid = (idx == best_idx)
         
-        # 设置颜色和文本
+        # Set colors and text
         if is_valid:
-            color = (0, 255, 0) # 绿色
+            color = (0, 255, 0) # Green
             status = f"PASS ({score:.2f})"
-            thickness = 3 if not any_passed else 2 # 触发保底时把这根“独苗”画粗一点
+            thickness = 3 
         else:
-            color = (0, 0, 255) # 红色
+            color = (0, 0, 255) # Red
             status = f"FAIL ({score:.2f})"
             thickness = 2
 
-        # 画框
+        # Draw box
         cv2.rectangle(cv_img, (x1, y1), (x2, y2), color, thickness)
         
-        # 贴标签
+        # Add label
         label = f"{detected_keyword} {status}"
         (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
         cv2.rectangle(cv_img, (x1, max(0, y1 - 20)), (x1 + w, y1), color, -1)
         cv2.putText(cv_img, label, (x1, max(0, y1 - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
-    # 4. 保存可视化结果
+    # 4. Save visualization results
     cv2.imwrite(output_path, cv_img)
-    print(f"  -> 图片已保存至: {output_path}")
+    print(f"  -> Image saved to: {output_path}")
 
 
 if __name__ == "__main__":
-    # 配置路径
-    JSON_FILE = "yolo_dataset/home_ovd_subset_30.json" 
+    # Path configuration
+    JSON_FILE = "yolo_dataset/home_ovd_keywords_json_full.json" 
     IMAGES_DIR = "yolo_dataset/filtered_images"
     OUTPUT_DIR = "visualizations"
     
-    # 如果输出文件夹不存在，则创建
+    # Create output directory if it doesn't exist
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    
+
+
     # ==========================================
-    # 提前加载模型
+    # Load models in advance
     # ==========================================
-    print("正在加载 YOLO 和 SigLIP 模型，请稍候...")
-    yolo_model = YOLO("ultralytics/yolov8s-worldv2.pt").to(device)
+    print("Loading YOLO and SigLIP models, please wait...")
+    yolo_model = YOLOE("yoloe-26l-seg.pt").to(device)
     siglip_processor = AutoProcessor.from_pretrained("/home/chen/workplace/LangTrack-Realtime/ultralytics/SigLIP/siglip2-base-patch16-224")
     siglip_model = AutoModel.from_pretrained("/home/chen/workplace/LangTrack-Realtime/ultralytics/SigLIP/siglip2-base-patch16-224").to(device)
     siglip_model.eval()
-    print("模型加载完成！")
+    print("Models loaded successfully!")
 
     # ==========================================
-    # 读取 JSON 并随机采样
+    # Read JSON and randomly sample
     # ==========================================
-    print(f"\n正在读取数据集: {JSON_FILE}")
+    print(f"\nReading dataset: {JSON_FILE}")
     with open(JSON_FILE, 'r', encoding='utf-8') as f:
         data = json.load(f)
-    
-    # 随机抽取 10 个样例
-    num_samples = min(10, len(data))
+
+    num_samples = min(20, len(data))
     random_samples = random.sample(data, num_samples)
     
-    print(f"成功抽取 {num_samples} 个样例，开始可视化...\n")
+    print(f"Successfully sampled {num_samples} items, starting visualization...\n")
 
     for i, item in enumerate(random_samples):
-        print(f"[{i+1}/{num_samples}] 正在处理 Region ID: {item.get('region_id')} | Phrase: {item.get('phrase')}")
+        print(f"[{i+1}/{num_samples}] Processing Region ID: {item.get('region_id')} | Phrase: {item.get('phrase')}")
         
         img_id = str(item['image_id'])
         img_path = os.path.join(IMAGES_DIR, f"{img_id}.jpg")
@@ -180,7 +173,7 @@ if __name__ == "__main__":
         output_path = os.path.join(OUTPUT_DIR, f"vis_sample_{i+1}_img{img_id}.jpg")
         
         if not os.path.exists(img_path):
-            print(f"  [警告] 找不到图片文件: {img_path}，跳过该样例。")
+            print(f"  [Warning] Image file not found: {img_path}, skipping this sample.")
             continue
             
         visualize_pipeline(
@@ -193,9 +186,8 @@ if __name__ == "__main__":
             device=device,
             output_path=output_path,
             gt_box=gt_box,
-            conf_thresh=0.02,
-            siglip_thresh=0.15  # 你可以在这里调整及格线阈值
+            conf_thresh=0.02
         )
         print("-" * 50)
         
-    print(f"\n全部完成！请前往 '{OUTPUT_DIR}' 文件夹查看结果。")
+    print(f"\nAll done! Please check the '{OUTPUT_DIR}' folder for results.")
