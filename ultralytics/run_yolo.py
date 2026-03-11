@@ -21,13 +21,8 @@ def calculate_iou(box1, box2):
     iou = inter_area / float(box1_area + box2_area - inter_area)
     return iou
 
+# Prompt method for YOLOE
 def get_combined_label(ann):
-    """
-    Generate target + attribute combined label string for a given annotation.
-    Example:
-    Input: target="shirt", attributes=["blue", "white striped", "hanging"]
-    Output: "blue white striped hanging shirt"
-    """
     target = ann.get('keywords', {}).get('target', '')
     attributes = ann.get('keywords', {}).get('attributes', [])
     
@@ -173,6 +168,10 @@ def inference_yolo_only(json_path, images_dir, conf_thresh=0.01, iou_thresh=0.5)
     map50 = np.mean(aps) if len(aps) > 0 else 0.0
     precision = global_tp / total_preds if total_preds > 0 else 0.0
     recall = global_tp / total_gts if total_gts > 0 else 0.0
+    if (precision + recall) > 0:
+        f1_score = 2 * (precision * recall) / (precision + recall)
+    else:
+        f1_score = 0.0
 
     print("\n" + "="*40)
     print("Validation with YOLOE ONLY Succeeded!")
@@ -182,6 +181,7 @@ def inference_yolo_only(json_path, images_dir, conf_thresh=0.01, iou_thresh=0.5)
     print("-" * 40)
     print(f"Precision@{iou_thresh}: {precision:.4f} ({precision*100:.2f}%)")
     print(f"Recall@{iou_thresh}:    {recall:.4f} ({recall*100:.2f}%)")
+    print(f"F1-Score@{iou_thresh}:   {f1_score:.4f} ({f1_score*100:.2f}%)")
     print(f"mAP@{iou_thresh}:       {map50:.4f} ({map50*100:.2f}%)")
     print("="*40)
 
