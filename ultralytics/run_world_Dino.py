@@ -53,10 +53,10 @@ def inference(json_path, images_dir, conf_thresh=0.01, iou_thresh=0.5, validatio
     #siglip_model = AutoModel.from_pretrained("IDEA-Research/grounding-dino-tiny").to(device)
     #siglip_model.eval()
     
-    print("Loading GroundingDINO Tiny...")
+    print("Loading GroundingDINO Base...")
 
-    model_id = "IDEA-Research/grounding-dino-tiny"#https://huggingface.co/docs/transformers/en/model_doc/grounding-dino
-
+    #model_id = "IDEA-Research/grounding-dino-tiny"#https://huggingface.co/docs/transformers/en/model_doc/grounding-dino
+    model_id = "IDEA-Research/grounding-dino-base"
     processor = AutoProcessor.from_pretrained(model_id)
     model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id).to(device)
     model.eval()
@@ -134,13 +134,13 @@ def inference(json_path, images_dir, conf_thresh=0.01, iou_thresh=0.5, validatio
         # [Stage 2] DINO Filtering & Disambiguation
         # ==========================================
         #prompt = ". ".join(all_yolo_classes)
-        prompt = ". ".join(all_yolo_classes)
+        prompt = " . ".join(all_yolo_classes)
         if len(prompt) == 0:
             continue #If no classes detected by YOLO, skip DINO and evaluation for this image
         
         inputs = processor(
             images=img_pil,
-            text=[all_yolo_classes],
+            text=prompt,
             return_tensors="pt"
         ).to(device)
 
@@ -150,11 +150,11 @@ def inference(json_path, images_dir, conf_thresh=0.01, iou_thresh=0.5, validatio
         results = processor.post_process_grounded_object_detection(
             outputs,
             inputs.input_ids,
-            threshold=0.25,
-            text_threshold=0.25,
+            box_threshold=0.25,#https://github.com/huggingface/transformers/issues/34926
+            text_threshold=0.25,#Thr best 
             target_sizes=[img_pil.size[::-1]]
         )
-        w, h = img_pil.size
+        #w, h = img_pil.size
 
         
         
@@ -169,8 +169,8 @@ def inference(json_path, images_dir, conf_thresh=0.01, iou_thresh=0.5, validatio
 
             raw_pred_boxes.append([x1, y1, x2, y2])
 
-        if phrase in phrase_to_idx:
-            raw_pred_classes.append(phrase_to_idx[phrase])
+            if phrase in phrase_to_idx:
+                raw_pred_classes.append(phrase_to_idx[phrase])
         filtered_pred_boxes = raw_pred_boxes
         filtered_pred_classes = raw_pred_classes
         # filtered_pred_boxes = []
@@ -199,29 +199,73 @@ def inference(json_path, images_dir, conf_thresh=0.01, iou_thresh=0.5, validatio
         # ==========================================
         # [Stage 3] Evaluation
         # ==========================================
+    #     for ann in anns:
+    #         total_targets += 1
+    #         x, y, w, h = ann['x'], ann['y'], ann['width'], ann['height']
+    #         gt_box = [x, y, x + w, y + h]
+    #         gt_cls_id = phrase_to_idx[ann['phrase']]
+            
+    #         is_matched = False
+    #         for p_box, p_cls in zip(filtered_pred_boxes, filtered_pred_classes):
+    #             if int(p_cls) == gt_cls_id:
+    #                 iou = calculate_iou(gt_box, p_box)
+    #                 if iou >= iou_thresh:
+    #                     is_matched = True
+    #                     break 
+            
+    #         if is_matched:
+    #             matched_targets += 1
+                
+    # recall = matched_targets / total_targets if total_targets > 0 else 0
+    
+        # Initialize counters for metrics
+        tp = 0  # True Positives
+        fp = 0  # False Positives
+        fn = 0  # False Negatives
+    
+        # Track which predictions were used to avoid double-counting
+        used_preds = set()
+
+        # Match Predictions to Ground Truths
         for ann in anns:
             total_targets += 1
-            x, y, w, h = ann['x'], ann['y'], ann['width'], ann['height']
-            gt_box = [x, y, x + w, y + h]
-            gt_cls_id = phrase_to_idx[ann['phrase']]
+            gt_box = [ann['x'], ann['y'], ann['x'] + ann['width'], ann['y'] + ann['height']]
+            gt_phrase = ann['phrase'].lower().strip()
+        
+            match_found = False
+            for i, (p_box, p_label) in enumerate(zip(filtered_pred_boxes, pred["labels"])):
+                if i in used_preds: continue
             
-            is_matched = False
-            for p_box, p_cls in zip(filtered_pred_boxes, filtered_pred_classes):
-                if int(p_cls) == gt_cls_id:
+                # Use 'in' for partial matching to handle "a chair" vs "chair"
+                if gt_phrase in p_label.lower() or p_label.lower() in gt_phrase:
                     iou = calculate_iou(gt_box, p_box)
                     if iou >= iou_thresh:
-                        is_matched = True
-                        break 
-            
-            if is_matched:
-                matched_targets += 1
-                
-    recall = matched_targets / total_targets if total_targets > 0 else 0
+                        tp += 1
+                        used_preds.add(i)
+                        match_found = True
+                        break
+            if match_found:
+                matched_targets += 1           
+            if not match_found:
+                fn += 1
+
+    # Any prediction not matched to a GT is a False Positive
+    fp += (len(filtered_pred_boxes) - len(used_preds))
+
+    # Calculate Final Metrics
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+    f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+    # Accuracy in detection is often defined as TP / (TP + FP + FN)
+    accuracy = tp / (tp + fp + fn) if (tp + fp + fn) > 0 else 0
     print("\n" + "="*40)
-    print("Validation with GroundingDINO Tiny Succeeded!")
+    print("Validation with GroundingDINO Base Succeeded!")
     print(f"Ground Truths: {total_targets}")
     print(f"Matched (IoU >= {iou_thresh}): {matched_targets}")
     print(f"Recall@{iou_thresh}: {recall:.4f} ({recall*100:.2f}%)")
+    print(f"Precision@{iou_thresh}: {precision:.4f} ({precision*100:.2f}%)")
+    print(f"Accuracy@{iou_thresh}: {accuracy:.4f} ({accuracy*100:.2f}%)")
+    print(f"F1-Score@{iou_thresh}: {f1:.4f} ({f1*100:.2f}%)")
     print("="*40)
 
 if __name__ == "__main__":
@@ -237,7 +281,7 @@ if __name__ == "__main__":
         )
         dspy.configure(lm=main_lm)
 
-    JSON_FILE = "yolo_dataset/indoors_subset/example.json" 
+    JSON_FILE = "yolo_dataset/indoors_subset/filtered_indoors_LM_vg.json" 
     IMAGES_DIR = "yolo_dataset/indoors_subset/images"                
     
     inference(JSON_FILE, IMAGES_DIR, validation=IS_VALIDATION)
