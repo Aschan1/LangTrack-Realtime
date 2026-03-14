@@ -228,7 +228,7 @@ def score_query_with_wedetect_ref(
             "role": "user",
             "content": [
                 {"type": "image", "image": copy.deepcopy(image_pil)},
-                {"type": "text", "text": f'Please detect the "{query_text}" in the image'},
+                {"type": "text", "text": query_text},
             ],
         },
         {
