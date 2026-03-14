@@ -66,6 +66,37 @@ def get_target_label(ann):
     return (ann.get("keywords", {}).get("target", "") or "").strip()
 
 
+def get_structured_query_text(ann):
+    keywords = ann.get("keywords", {}) if isinstance(ann, dict) else {}
+
+    target = (keywords.get("target", "") or "").strip()
+    attributes = keywords.get("attributes", []) or []
+    if not isinstance(attributes, list):
+        attributes = [str(attributes)]
+    attributes = [str(a).strip() for a in attributes if str(a).strip()]
+
+    anchor_object = (keywords.get("anchor_object", "") or "").strip()
+    spatial_relation = (keywords.get("spatial_relation", "") or "").strip()
+
+    payload = {
+        "target": target,
+        "attributes": attributes,
+        "anchor_object": anchor_object,
+        "spatial_relation": spatial_relation,
+    }
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def get_query_label(ann, query_mode):
+    if query_mode == "combined":
+        return get_combined_label(ann)
+    if query_mode == "target":
+        return get_target_label(ann)
+    if query_mode == "structured":
+        return get_structured_query_text(ann)
+    raise ValueError(f"Unsupported query_mode: {query_mode}")
+
+
 def try_import_wedetect_ref_model_cls():
     """Prefer official WeDetect repo class; fallback to transformers>=4.57.1 export if available."""
     ensure_wedetect_repo_on_path()
@@ -178,7 +209,7 @@ def build_queries_for_image(anns, query_mode):
     seen = set()
     queries = []
     for ann in anns:
-        q = get_combined_label(ann) if query_mode == "combined" else get_target_label(ann)
+        q = get_query_label(ann, query_mode)
         if q and q not in seen:
             seen.add(q)
             queries.append(q)
@@ -191,7 +222,7 @@ def build_ranked_queries_for_image(anns, query_mode, max_queries=None):
     first_idx = {}
 
     for i, ann in enumerate(anns):
-        q = get_combined_label(ann) if query_mode == "combined" else get_target_label(ann)
+        q = get_query_label(ann, query_mode)
         if not q:
             continue
         counts[q] = counts.get(q, 0) + 1
@@ -301,7 +332,7 @@ def inference_wedetect_ref(
     global_label_to_id = {}
     for anns in img_to_anns.values():
         for ann in anns:
-            label = get_combined_label(ann) if query_mode == "combined" else get_target_label(ann)
+            label = get_query_label(ann, query_mode)
             if label and label not in global_label_to_id:
                 global_label_to_id[label] = len(global_label_to_id)
 
@@ -333,7 +364,7 @@ def inference_wedetect_ref(
             continue
 
         for ann in anns:
-            label = get_combined_label(ann) if query_mode == "combined" else get_target_label(ann)
+            label = get_query_label(ann, query_mode)
             if not label:
                 continue
             x, y, w, h = ann["x"], ann["y"], ann["width"], ann["height"]
@@ -539,9 +570,13 @@ def parse_args():
     )
     parser.add_argument(
         "--query-mode",
-        choices=["combined", "target"],
+        choices=["combined", "target", "structured"],
         default=None,
-        help="Class construction mode for evaluation labels/queries. Overrides --preset when set.",
+        help=(
+            "Class construction mode for evaluation labels/queries. "
+            "'structured' serializes target/attributes/anchor/spatial_relation as JSON text. "
+            "Overrides --preset when set."
+        ),
     )
     parser.add_argument(
         "--proposal-conf",
