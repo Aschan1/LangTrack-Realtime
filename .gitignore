@@ -1,0 +1,5 @@
+yolo_dataset/
+mobileclip2_b.ts
+yoloe-26l-seg.pt
+__pycache__/
+*.pyc

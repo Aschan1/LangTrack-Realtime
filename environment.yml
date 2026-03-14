@@ -215,4 +215,4 @@ dependencies:
       - urllib3==2.6.3
       - wcwidth==0.5.2
       - zipp==3.23.0
-prefix: /home/chen/miniconda3/envs/yolo
+prefix: ./envs/yolo

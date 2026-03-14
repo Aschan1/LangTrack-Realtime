@@ -1,9 +1,20 @@
 import json
 import os
+import sys
+from pathlib import Path
 import torch
 import numpy as np
 from tqdm import tqdm
 from PIL import Image
+
+# Ensure imports resolve to installed `ultralytics` package, not this script directory shadow.
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+if str(SCRIPT_DIR) in sys.path:
+    sys.path.remove(str(SCRIPT_DIR))
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 from ultralytics import YOLOE
 
 def calculate_iou(box1, box2):
@@ -38,7 +49,8 @@ def inference_yolo_only(json_path, images_dir, conf_thresh=0.01, iou_thresh=0.5)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
     print("Loading YOLOE...")
-    yolo_model = YOLOE("yoloe-26l-seg.pt").to(device)
+    yolo_weights = REPO_ROOT / "yoloe-26l-seg.pt"
+    yolo_model = YOLOE(str(yolo_weights)).to(device)
 
     with open(json_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
