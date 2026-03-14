@@ -10,13 +10,12 @@ import torch
 from PIL import Image
 from tqdm import tqdm
 
-# Ensure imports resolve to installed `ultralytics` package, not this script directory shadow.
+# Ensure imports resolve to installed `ultralytics` package, not local namespace-shadow paths.
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
-if str(SCRIPT_DIR) in sys.path:
-    sys.path.remove(str(SCRIPT_DIR))
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+for shadow_path in (str(SCRIPT_DIR), str(REPO_ROOT)):
+    while shadow_path in sys.path:
+        sys.path.remove(shadow_path)
 
 from transformers import AutoProcessor
 from ultralytics import YOLOE
