@@ -272,6 +272,7 @@ def inference_wedetect_ref(
     wedetect_ref_checkpoint,
     iou_thresh=0.5,
     score_thre=-1.0,
+    topk_per_query=5,
     query_mode="combined",
     proposal_conf=0.01,
     proposal_max_det=300,
@@ -376,7 +377,8 @@ def inference_wedetect_ref(
                 continue
 
             if score_thre < 0:
-                top_val, top_idx = torch.topk(pred_scores.view(-1), 1, dim=0)
+                k = min(max(int(topk_per_query), 1), int(pred_scores.numel()))
+                top_val, top_idx = torch.topk(pred_scores.view(-1), k, dim=0)
                 keep_indices = top_idx.detach().cpu().tolist()
                 keep_scores = top_val.detach().float().cpu().tolist()
             else:
@@ -479,18 +481,26 @@ def inference_wedetect_ref(
 def parse_args():
     parser = argparse.ArgumentParser(description="Evaluate WeDetectRef-2B on indoor subset JSON/images.")
     presets = {
-        "fast": {"query_mode": "target", "proposal_conf": 0.1, "proposal_max_det": 50, "max_queries_per_image": 8},
+        "fast": {
+            "query_mode": "target",
+            "proposal_conf": 0.1,
+            "proposal_max_det": 50,
+            "max_queries_per_image": 8,
+            "topk_per_query": 3,
+        },
         "balanced": {
             "query_mode": "target",
             "proposal_conf": 0.05,
             "proposal_max_det": 80,
             "max_queries_per_image": 12,
+            "topk_per_query": 5,
         },
         "quality": {
             "query_mode": "combined",
             "proposal_conf": 0.01,
             "proposal_max_det": 300,
             "max_queries_per_image": 0,
+            "topk_per_query": 10,
         },
     }
     parser.add_argument(
@@ -513,7 +523,13 @@ def parse_args():
         "--score-thre",
         type=float,
         default=-1.0,
-        help="Score threshold for WeDetectRef proposal scores. If <0, use top1 per query (official behavior).",
+        help="Score threshold for WeDetectRef proposal scores. If <0, use top-k selection per query.",
+    )
+    parser.add_argument(
+        "--topk-per-query",
+        type=int,
+        default=None,
+        help="When --score-thre < 0, keep top-k proposals per query. Overrides --preset.",
     )
     parser.add_argument(
         "--preset",
@@ -556,6 +572,8 @@ def parse_args():
         args.proposal_max_det = preset["proposal_max_det"]
     if args.max_queries_per_image is None:
         args.max_queries_per_image = preset["max_queries_per_image"]
+    if args.topk_per_query is None:
+        args.topk_per_query = preset["topk_per_query"]
 
     return args
 
@@ -565,7 +583,8 @@ if __name__ == "__main__":
     print(
         "Using preset/config: "
         f"preset={args.preset}, query_mode={args.query_mode}, proposal_conf={args.proposal_conf}, "
-        f"proposal_max_det={args.proposal_max_det}, max_queries_per_image={args.max_queries_per_image}"
+        f"proposal_max_det={args.proposal_max_det}, max_queries_per_image={args.max_queries_per_image}, "
+        f"topk_per_query={args.topk_per_query}"
     )
     inference_wedetect_ref(
         json_path=args.json,
@@ -573,6 +592,7 @@ if __name__ == "__main__":
         wedetect_ref_checkpoint=args.wedetect_ref_checkpoint,
         iou_thresh=args.iou_thresh,
         score_thre=args.score_thre,
+        topk_per_query=args.topk_per_query,
         query_mode=args.query_mode,
         proposal_conf=args.proposal_conf,
         proposal_max_det=args.proposal_max_det,
