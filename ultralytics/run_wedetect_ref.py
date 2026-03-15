@@ -199,8 +199,7 @@ def load_wedetect_ref_model(model_id, device):
 def load_yoloe_proposal_model(weights_path, device):
     print("Loading proposal model (YOLOE)...")
     yolo_model = YOLOE(str(weights_path)).to(device)
-    text_model_variant = os.getenv("YOLOE_TEXT_MODEL", "clip:ViT-B/32")
-    yolo_model.model.text_model = text_model_variant
+    text_model_variant = getattr(yolo_model.model, "text_model", "unknown")
     print(f"YOLOE text model for proposals: {text_model_variant}")
     return yolo_model
 
@@ -358,7 +357,8 @@ def inference_wedetect_ref(
             query_mode=query_mode,
             max_queries=max_queries_per_image,
         )
-        proposal_labels = build_queries_for_image(anns, query_mode="target")
+        # Match the direct YOLOE baseline by proposing with attribute+target labels.
+        proposal_labels = build_queries_for_image(anns, query_mode="combined")
 
         if not query_labels or not proposal_labels:
             continue

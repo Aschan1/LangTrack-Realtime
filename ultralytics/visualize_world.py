@@ -1,12 +1,71 @@
 import json
 import random
 import os
+import sys
+from pathlib import Path
 import torch
 import cv2
 import numpy as np
 from PIL import Image
-from ultralytics import YOLOE
 from transformers import AutoProcessor, AutoModel
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+SRC_ULTRALYTICS_ROOT = REPO_ROOT / "src" / "ultralytics"
+
+# Prefer complete local source package and avoid namespace-shadow imports from this script directory.
+while str(SCRIPT_DIR) in sys.path:
+    sys.path.remove(str(SCRIPT_DIR))
+if SRC_ULTRALYTICS_ROOT.is_dir() and str(SRC_ULTRALYTICS_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ULTRALYTICS_ROOT))
+elif str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from ultralytics import YOLOE
+
+
+def resolve_siglip_source() -> str:
+    """Prefer local SigLIP files, otherwise fallback to HF model id."""
+    local_dir = SCRIPT_DIR / "SigLIP" / "siglip2-base-patch16-224"
+    required_files = ("config.json", "preprocessor_config.json")
+    if local_dir.is_dir() and all((local_dir / name).exists() for name in required_files):
+        return str(local_dir)
+    return os.getenv("SIGLIP_MODEL_ID", "google/siglip2-base-patch16-224")
+
+
+def resolve_visualize_inputs():
+    """Resolve dataset JSON and image directory with optional env overrides."""
+    json_override = os.getenv("VISUALIZE_JSON", "").strip()
+    images_override = os.getenv("VISUALIZE_IMAGES", "").strip()
+
+    json_candidates = [
+        Path(json_override).expanduser() if json_override else None,
+        REPO_ROOT / "yolo_dataset" / "home_ovd_keywords_json_full.json",
+        REPO_ROOT / "yolo_dataset" / "indoors_subset" / "filtered_indoors_LM_vg.json",
+        REPO_ROOT / "yolo_dataset" / "indoors_subset" / "filtered_indoors_LM.json",
+        REPO_ROOT / "yolo_dataset" / "indoors_subset" / "filtered_indoors.json",
+    ]
+    image_candidates = [
+        Path(images_override).expanduser() if images_override else None,
+        REPO_ROOT / "yolo_dataset" / "filtered_images",
+        REPO_ROOT / "yolo_dataset" / "indoors_subset" / "images",
+    ]
+
+    json_file = next((p for p in json_candidates if p and p.is_file()), None)
+    images_dir = next((p for p in image_candidates if p and p.is_dir()), None)
+
+    if json_file is None:
+        available = sorted(str(p) for p in (REPO_ROOT / "yolo_dataset").rglob("*.json"))
+        raise FileNotFoundError(
+            "Could not find dataset JSON. Set VISUALIZE_JSON=/abs/path/file.json. "
+            f"Found JSON files: {available}"
+        )
+    if images_dir is None:
+        raise FileNotFoundError(
+            "Could not find images directory. Set VISUALIZE_IMAGES=/abs/path/to/images."
+        )
+    return str(json_file), str(images_dir)
+
 
 def siglip_get_score(crop_img, phrase, processor, model, device):
     """
@@ -127,8 +186,7 @@ def visualize_pipeline(img_path, original_phrase, keywords, yolo_model, siglip_p
 
 if __name__ == "__main__":
     # Path configuration
-    JSON_FILE = "yolo_dataset/home_ovd_keywords_json_full.json" 
-    IMAGES_DIR = "yolo_dataset/filtered_images"
+    JSON_FILE, IMAGES_DIR = resolve_visualize_inputs()
     OUTPUT_DIR = "visualizations"
     
     # Create output directory if it doesn't exist
@@ -142,8 +200,10 @@ if __name__ == "__main__":
     # ==========================================
     print("Loading YOLO and SigLIP models, please wait...")
     yolo_model = YOLOE("yoloe-26l-seg.pt").to(device)
-    siglip_processor = AutoProcessor.from_pretrained("/home/chen/workplace/LangTrack-Realtime/ultralytics/SigLIP/siglip2-base-patch16-224")
-    siglip_model = AutoModel.from_pretrained("/home/chen/workplace/LangTrack-Realtime/ultralytics/SigLIP/siglip2-base-patch16-224").to(device)
+    siglip_source = resolve_siglip_source()
+    print(f"Using SigLIP source: {siglip_source}")
+    siglip_processor = AutoProcessor.from_pretrained(siglip_source)
+    siglip_model = AutoModel.from_pretrained(siglip_source).to(device)
     siglip_model.eval()
     print("Models loaded successfully!")
 
