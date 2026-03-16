@@ -10,6 +10,24 @@ from ultralytics import YOLOE
 from transformers import AutoProcessor, AutoModel
 from LLMs.get_prompt import PromptProcessor
 
+def expand_crop(img_pil, box, expansion_factor=1.5):
+    width, height = img_pil.size
+    x1, y1, x2, y2 = box
+    w = x2 - x1
+    h = y2 - y1
+    
+    # 计算扩展后的中心点和新的宽高
+    cx, cy = x1 + w / 2, y1 + h / 2
+    new_w, new_h = w * expansion_factor, h * expansion_factor
+    
+    # 计算新的坐标并确保不越界
+    new_x1 = max(0, int(cx - new_w / 2))
+    new_y1 = max(0, int(cy - new_h / 2))
+    new_x2 = min(width, int(cx + new_w / 2))
+    new_y2 = min(height, int(cy + new_h / 2))
+    
+    return img_pil.crop((new_x1, new_y1, new_x2, new_y2))
+
 def calculate_iou(box1, box2):
     x1_inter = max(box1[0], box2[0])
     y1_inter = max(box1[1], box2[1])
@@ -30,11 +48,16 @@ def siglip_verify(
     phrase,
     processor,
     model,
-    device,
-    p_thresh=0.35,   
-    margin=0.05      
+    device
 ):
-    texts = [phrase, "a blank background", "a photo of a random object"]
+    # 丰富负面提示词，吸收不同类型的背景干扰
+    texts = [
+        phrase, 
+        "a blank background", 
+        "a photo of a random object", 
+        "noise and meaningless texture",
+        "cropped irrelevant background"
+    ]
     inputs = processor(
         text=texts,
         images=crop_img,
@@ -45,20 +68,21 @@ def siglip_verify(
     with torch.no_grad():
         outputs = model(**inputs)
 
-    logits = outputs.logits_per_image[0]
-    probs = F.softmax(logits, dim=0) 
+    logits = outputs.logits_per_image
+    
+    # --- Platt Scaling Calibration ---
+    A = 0.6256
+    B = 3.3241
+    
+    scaled_logits = A * logits + B
+    probs = torch.sigmoid(scaled_logits)
 
-    p_phrase = float(probs[0].item())
-    p_negmax = float(torch.max(probs[1:]).item())
-
-    is_top1 = (torch.argmax(probs).item() == 0)
-    pass_thresh = (p_phrase >= p_thresh)
-    pass_margin = ((p_phrase - p_negmax) >= margin)
-
-    return (is_top1 and pass_thresh and pass_margin), p_phrase
+    p_phrase = float(probs[0, 0].item())
+    
+    return p_phrase
 
 
-def inference(json_path, images_dir, conf_thresh=0.01, iou_thresh=0.5, validation=False, pass_thresh=0.4, margin=0.1):
+def inference(json_path, images_dir, conf_thresh=0.01, iou_thresh=0.5, validation=False):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
     print("Loading YOLOE...")
@@ -66,7 +90,6 @@ def inference(json_path, images_dir, conf_thresh=0.01, iou_thresh=0.5, validatio
     yolo_model.to(device)
 
     print("Loading SigLIP...")
-    #Replace with your actual SigLIP model path
     siglip_processor = AutoProcessor.from_pretrained("/home/chen/workplace/LangTrack-Realtime/ultralytics/SigLIP/siglip2-base-patch16-224")
     siglip_model = AutoModel.from_pretrained("/home/chen/workplace/LangTrack-Realtime/ultralytics/SigLIP/siglip2-base-patch16-224").to(device)
     siglip_model.eval()
@@ -105,6 +128,8 @@ def inference(json_path, images_dir, conf_thresh=0.01, iou_thresh=0.5, validatio
         
         try:
             img_pil = Image.open(img_path).convert('RGB')
+            img_w, img_h = img_pil.size
+            img_area = img_w * img_h  # 提前计算整图面积
         except Exception as e:
             continue
 
@@ -120,49 +145,78 @@ def inference(json_path, images_dir, conf_thresh=0.01, iou_thresh=0.5, validatio
                 phrase_to_idx[phrase] = len(phrase_to_idx) 
             
             keywords = ann['keywords'] 
+            attrs = keywords.get('attributes', [])
+            target = keywords.get('target', '')
             
-            if keywords['target'] not in keyword_to_phrases:
-                keyword_to_phrases[keywords['target']] = set() 
+            combined_keyword = " ".join(attrs + [target]).strip()
+            
+            if combined_keyword not in keyword_to_phrases:
+                keyword_to_phrases[combined_keyword] = set() 
 
-            keyword_to_phrases[keywords['target']].add(phrase)
+            keyword_to_phrases[combined_keyword].add(phrase)
 
         all_yolo_classes = list(keyword_to_phrases.keys())
         
         if len(all_yolo_classes) > 0:
             yolo_model.set_classes(all_yolo_classes)
         else:
-            continue 
+            continue
         
         results = yolo_model.predict(img_path, conf=conf_thresh, verbose=False)
         result = results[0]
         
         raw_pred_boxes = result.boxes.xyxy.cpu().numpy()
         raw_pred_classes = result.boxes.cls.cpu().numpy()
+        raw_pred_confs = result.boxes.conf.cpu().numpy()
 
         # ==========================================
-        # [Stage 2] SigLIP Filtering & Disambiguation
+        # [Stage 2] SigLIP Filtering & Disambiguation (Dynamic & Bypass)
         # ==========================================
         filtered_pred_boxes = []
-        filtered_pred_classes = [] 
-        filtered_pred_confs = [] # store the confidence scores for evaluation
+        filtered_pred_classes = []
+        filtered_pred_confs = []
+        
+        # 定义动态 Alpha 的边界值参数 (你可以按需调整)
+        MIN_ALPHA = 0.1          # 极小框最少听 SigLIP 多少 (10%)
+        MAX_ALPHA = 0.60          # 极大框最多听 SigLIP 多少 (60%)
+        SATURATION_RATIO = 0.25   # 当框面积占整图 25% 以上时，Alpha 达到最大值
 
-        for p_box, p_cls in zip(raw_pred_boxes, raw_pred_classes):
-            detected_keyword = all_yolo_classes[int(p_cls)]
+        for p_box, p_cls, p_det_conf in zip(raw_pred_boxes, raw_pred_classes, raw_pred_confs):
+            detected_keyword = all_yolo_classes[int(p_cls)] 
             possible_original_phrases = keyword_to_phrases[detected_keyword]
             
             x1, y1, x2, y2 = map(int, p_box)
             if x2 <= x1 or y2 <= y1:
                 continue
                 
-            crop_img = img_pil.crop((x1, y1, x2, y2))
+            if float(p_det_conf) >= 0.4:
+                fused_score = float(p_det_conf)
             
-            for orig_phrase in possible_original_phrases:
-                is_valid, conf_score = siglip_verify(crop_img, orig_phrase, siglip_processor, siglip_model, device, p_thresh=pass_thresh, margin=margin)
+            else:
+                # 1. 计算面积比例
+                box_area = (x2 - x1) * (y2 - y1)
+                area_ratio = box_area / img_area
                 
-                if is_valid:
+                # 2. 线性插值计算当前框的 Alpha
+                # min(..., 1.0) 保证面积超过 SATURATION_RATIO 时封顶
+                alpha = MIN_ALPHA + (MAX_ALPHA - MIN_ALPHA) * min(area_ratio / SATURATION_RATIO, 1.0)
+                
+                # 3. SigLIP 验证 (仅针对模糊框进行高开销的推理)
+                crop_img = expand_crop(img_pil, [x1, y1, x2, y2], expansion_factor=1.5)
+                p_vlm_conf = siglip_verify(crop_img, detected_keyword, siglip_processor, siglip_model, device)
+                
+                # 4. 几何平均分数融合
+                p_det_conf_safe = max(float(p_det_conf), 1e-6)
+                p_vlm_conf_safe = max(float(p_vlm_conf), 1e-6)
+                
+                fused_score = (p_det_conf_safe ** (1 - alpha)) * (p_vlm_conf_safe ** alpha)
+            
+            # 记录结果
+            if fused_score >= conf_thresh:
+                for orig_phrase in possible_original_phrases:
                     filtered_pred_boxes.append(p_box)
                     filtered_pred_classes.append(phrase_to_idx[orig_phrase])
-                    filtered_pred_confs.append(conf_score)
+                    filtered_pred_confs.append(fused_score)
 
         # ==========================================
         # [Stage 3] Record for Global Evaluation
@@ -246,7 +300,7 @@ def inference(json_path, images_dir, conf_thresh=0.01, iou_thresh=0.5, validatio
     map50 = np.mean(aps) if len(aps) > 0 else 0.0
     precision = global_tp / total_preds if total_preds > 0 else 0.0
     recall = global_tp / total_gts if total_gts > 0 else 0.0
-
+    f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
     print("\n" + "="*40)
     print("Validation with SigLIP Filtering Succeeded!")
     print(f"Ground Truths (Total Targets): {total_gts}")
@@ -255,6 +309,7 @@ def inference(json_path, images_dir, conf_thresh=0.01, iou_thresh=0.5, validatio
     print("-" * 40)
     print(f"Precision@{iou_thresh}: {precision:.4f} ({precision*100:.2f}%)")
     print(f"Recall@{iou_thresh}:    {recall:.4f} ({recall*100:.2f}%)")
+    print(f"F1-Score@{iou_thresh}:   {f1_score:.4f} ({f1_score*100:.2f}%)")
     print(f"mAP@{iou_thresh}:       {map50:.4f} ({map50*100:.2f}%)")
     print("="*40)
 

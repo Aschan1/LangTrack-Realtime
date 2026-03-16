@@ -5,21 +5,7 @@ import numpy as np
 from tqdm import tqdm
 from PIL import Image
 from ultralytics import YOLOE
-
-def calculate_iou(box1, box2):
-    x1_inter = max(box1[0], box2[0])
-    y1_inter = max(box1[1], box2[1])
-    x2_inter = min(box1[2], box2[2])
-    y2_inter = min(box1[3], box2[3])
-
-    inter_area = max(0, x2_inter - x1_inter) * max(0, y2_inter - y1_inter)
-    if inter_area == 0:
-        return 0.0
-
-    box1_area = (box1[2] - box1[0]) * (box1[3] - box1[1])
-    box2_area = (box2[2] - box2[0]) * (box2[3] - box2[1])
-    iou = inter_area / float(box1_area + box2_area - inter_area)
-    return iou
+from run_world import calculate_iou
 
 # Prompt method for YOLOE
 def get_combined_label(ann):
@@ -31,10 +17,11 @@ def get_combined_label(ann):
         label = f"{attr_str} {target}".strip()
     else:
         label = target.strip()
-        
+    # label = ann.get('phrase')    
     return label
 
-def inference_yolo_only(json_path, images_dir, conf_thresh=0.01, iou_thresh=0.5):
+def get_predictions_and_gts(json_path, images_dir, conf_thresh):
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
     print("Loading YOLOE...")
@@ -64,7 +51,7 @@ def inference_yolo_only(json_path, images_dir, conf_thresh=0.01, iou_thresh=0.5)
     all_gts = []
     all_preds = []
     
-    for img_id, anns in tqdm(img_to_anns.items(), desc="Evaluating"):
+    for img_id, anns in tqdm(img_to_anns.items(), desc=f"Inference with YOLO"):
         img_path = os.path.join(images_dir, f"{img_id}.jpg")
         if not os.path.exists(img_path):
             continue
@@ -101,8 +88,15 @@ def inference_yolo_only(json_path, images_dir, conf_thresh=0.01, iou_thresh=0.5)
                 'img_id': img_id, 
                 'cls': global_cls_id, 
                 'box': p_box, 
-                'conf': float(p_conf)
+                'conf': float(p_conf),
+                'p_label': label_str
             })
+            
+    return all_gts, all_preds
+
+def inference_yolo_only(json_path, images_dir, conf_thresh=0.05, iou_thresh=0.5):
+    
+    all_gts, all_preds = get_predictions_and_gts(json_path, images_dir, conf_thresh)
 
     # ==========================================
     # Calculate Metrics: Precision, Recall, mAP50
@@ -168,6 +162,7 @@ def inference_yolo_only(json_path, images_dir, conf_thresh=0.01, iou_thresh=0.5)
     map50 = np.mean(aps) if len(aps) > 0 else 0.0
     precision = global_tp / total_preds if total_preds > 0 else 0.0
     recall = global_tp / total_gts if total_gts > 0 else 0.0
+    
     if (precision + recall) > 0:
         f1_score = 2 * (precision * recall) / (precision + recall)
     else:
@@ -189,4 +184,4 @@ if __name__ == "__main__":
     JSON_FILE = "yolo_dataset/indoors_subset/filtered_indoors_LM_vg.json" 
     IMAGES_DIR = "yolo_dataset/indoors_subset/images"                
     
-    inference_yolo_only(JSON_FILE, IMAGES_DIR)
+    inference_yolo_only(JSON_FILE, IMAGES_DIR, conf_thresh=0.01)
