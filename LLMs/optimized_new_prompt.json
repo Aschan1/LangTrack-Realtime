@@ -1,0 +1,102 @@
+{
+  "traces": [],
+  "train": [],
+  "demos": [
+    {
+      "augmented": true,
+      "speech": "Uh, can you find the blue curtains that have sailboats on them?",
+      "phrase": "blue curtains with sailboats on them",
+      "target": "curtains",
+      "attributes": [
+        "blue",
+        "with sailboats"
+      ],
+      "anchor_object": "None",
+      "spatial_relation": "None",
+      "is_valid_command": true
+    },
+    {
+      "augmented": true,
+      "speech": "Over there, a white pillow is on the couch.",
+      "phrase": "a white pillow on the couch",
+      "target": "pillow",
+      "attributes": [
+        "white"
+      ],
+      "anchor_object": "couch",
+      "spatial_relation": "on",
+      "is_valid_command": true
+    },
+    {
+      "augmented": true,
+      "speech": "I see a teddy bear that lies against a pillow.",
+      "phrase": "a teddy bear lying against a pillow",
+      "target": "teddy bear",
+      "attributes": [
+        "lying"
+      ],
+      "anchor_object": "pillow",
+      "spatial_relation": "against",
+      "is_valid_command": false
+    },
+    {
+      "speech": "Yeah so the the the to Bing addressed by the Boss...",
+      "phrase": null,
+      "target": "None",
+      "attributes": [],
+      "anchor_object": null,
+      "spatial_relation": null,
+      "is_valid_command": false
+    },
+    {
+      "speech": "Please grab the decorative piece... it's sitting on the right side of the table.",
+      "phrase": "the decorative piece on the right side of the table",
+      "target": "decorative piece",
+      "attributes": [],
+      "anchor_object": "table",
+      "spatial_relation": "on the right side",
+      "is_valid_command": true
+    }
+  ],
+  "signature": {
+    "instructions": "Given the fields `speech`, produce the fields `phrase`, `target`, `attributes`, `anchor_object`, `spatial_relation`, `is_valid_command`.",
+    "fields": [
+      {
+        "prefix": "Speech:",
+        "description": "The original speech text."
+      },
+      {
+        "prefix": "Phrase:",
+        "description": "The converted descriptive phrase."
+      },
+      {
+        "prefix": "Target:",
+        "description": "The main object category to be detected, which should be the most specific and tangible noun in the phrase."
+      },
+      {
+        "prefix": "Attributes:",
+        "description": "List of descriptive properties of the target."
+      },
+      {
+        "prefix": "Anchor Object:",
+        "description": "A nearby reference object used for localization."
+      },
+      {
+        "prefix": "Spatial Relation:",
+        "description": "Spatial relationship between target and anchor."
+      },
+      {
+        "prefix": "Is Valid Command:",
+        "description": "True ONLY if the speech clearly mentions a tangible physical object to find or look at. False if it is nonsense, abstract, or just background chatter."
+      }
+    ]
+  },
+  "lm": null,
+  "metadata": {
+    "dependency_versions": {
+      "python": "3.13",
+      "dspy": "3.1.3",
+      "cloudpickle": "3.1"
+    }
+  }
+}
