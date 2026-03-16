@@ -14,12 +14,12 @@ LangTrack-Realtime is a real-time open-vocabulary detection system based on adva
 - **Home Optimization**: Detection algorithms optimized for home scenarios
 - **Easy to Use**: Provides complete toolchain and example code
 
-## Installation
+## Getting Started
 
 ### Environment Requirements
 
 - Python 3.13
-- CUDA (recommended for GPU acceleration)
+- torch 2.4.1
 
 ### Installation Steps
 
@@ -29,53 +29,65 @@ git clone https://github.com/your-username/LangTrack-Realtime.git
 cd LangTrack-Realtime
 ```
 
-2. Install dependencies(Whisper not included yet):
-```bash
-conda env create -f environment.yml
-```
-3. Or try to install dependencies by pip(Whisper not included yet):
+2. Install dependencies by pip:
 ```bash
 pip install -r requirements.txt
 ```
+### Dataset
 
-## Usage
+Please put the dataset `GHome638` in `yolo_dataset/`, containing annotated data for home scenarios. You can download it from [here](https://drive.google.com/file/d/1bLyoBie4FxnPyaa63QKMi-zgh3uZhIkl/view?usp=drive_link).
 
-### Data Preparation
-
-Use tool scripts to process data(Cured data are published in [Google Cloud](https://drive.google.com/file/d/16L68W-vvtYAvxRCTGMgGVkV32QO7XKjb/view?usp=drive_link)):
-```bash
-python tools/cure_data.py
-python tools/YOLO_data.py 
-```
-`YOLO_data.py` converts json and picture into Yolov8 format, but it is useless now. Because we are not using offical API `model.val` to evaluate.
-
-### Visualize Data
-
-```bash
-python tools/visualize_data.py #Support YOLOv8 format data only.
-```
-
-### Run Detection
+### Run YOLO-Siglip Detection
 
 ```bash
 python ultralytics/run_world.py
 ```
 
-## Dataset
+### DEMO
 
-Please put the dataset `GHome727` in `yolo_dataset/`, containing annotated data for home scenarios. You can download it from [here](https://drive.google.com/file/d/16L68W-vvtYAvxRCTGMgGVkV32QO7XKjb/view?usp=drive_link).
+#### 1. Run the Whisper service
+1. Run the Whisper Service Container (More details please refer to [WhisperS2T](https://github.com/shashikg/WhisperS2T?tab=readme-ov-file))
+```bash
+docker pull shashikg/whisper_s2t:dev-trtllm
+docker run -it --rm \
+  --gpus all \
+  -p 5000:5000 \
+  -v ${PWD}/WhisperS2T:/workspace/whisper \
+  shashikg/whisper_s2t:dev-trtllm \
+  /bin/bash
+```
+- Tips: Please run the commands below in the container.
+2. Install necessary libraries:
+```bash
+pip install fastapi uvicorn python-multipart
+cd whisper
+```
+3. Run the API server:
+```bash
+python api_server.py
+```
 
+#### 2. Run Qwen3.5
+```bash
+# Lower -ngl and -c if you have tight budget on RAM
+llama-server -m <YOUR_MODEL_PATH> -ngl 99 --parallel 4 -c 16482 --port 8080 --reasoning-budget 0 --temp 0.1 --top-p 0.9 --top-k 40 --repeat-penalty 1.1
+```
+
+#### 3. Run the Demo
+```bash
+python ultralytics/demo.py
+```
 ## Project Structure
 
 ```
 LangTrack-Realtime/
+├── LLMs/                 # Pre-trained models
 ├── models/                 # Pre-trained models
 ├── tools/                  # Data processing tools
 ├── ultralytics/           # YOLO library
 ├── examples/              # Example code
 ├── yolo_dataset/          # Dataset
-├── Whisper/               # Speech processing
-├── SigLIP/                # Multimodal model
+├── WhisperS2T/               # Speech processing
 └── README.md
 ```
 
@@ -91,3 +103,5 @@ This project uses the following open-source libraries and tools:
 - [Ultralytics YOLO](https://github.com/ultralytics/ultralytics)
 - [OpenAI Whisper](https://github.com/openai/whisper)
 - [SigLIP](https://github.com/google-research/big_vision)
+- [WhisperS2T](https://github.com/shashikg/WhisperS2T?tab=readme-ov-file)
+- [Qwen3.5](https://huggingface.co/Qwen/Qwen3.5-35B-A3B)
