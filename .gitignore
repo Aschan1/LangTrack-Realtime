@@ -1,5 +1,11 @@
+yolo_dataset/
+mobileclip2_b.ts
 models/
 yolo_dataset/
 visualizations/
 wedetect/
 wedetect_ref/
+__pycache__/
+WeDetect-Ref-2B/
+WeDetect-Ref-4B/
+visualizations*/
