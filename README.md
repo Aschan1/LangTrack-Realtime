@@ -66,6 +66,10 @@ cd whisper
 ```bash
 python api_server.py
 ```
+OR
+```bash
+python3 api_server.py
+```
 
 #### 2. Run Qwen3.5
 ```bash
