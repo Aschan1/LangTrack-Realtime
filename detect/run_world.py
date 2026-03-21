@@ -1,15 +1,34 @@
 import json
 import os
+import sys
+from pathlib import Path
 import torch
 import torch.nn.functional as F
 import dspy
 import numpy as np
 from tqdm import tqdm
 from PIL import Image
+
+# Ensure imports resolve to installed `ultralytics` package, not this script directory shadow.
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+if str(SCRIPT_DIR) in sys.path:
+    sys.path.remove(str(SCRIPT_DIR))
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 from ultralytics import YOLOE
 from transformers import AutoProcessor, AutoModel
 from LLMs.get_prompt import PromptProcessor
 
+
+def resolve_siglip_source() -> str:
+    """Prefer local SigLIP files, otherwise fallback to model id."""
+    local_dir = SCRIPT_DIR / "SigLIP" / "siglip2-base-patch16-224"
+    required_files = ("config.json", "preprocessor_config.json")
+    if local_dir.is_dir() and all((local_dir / name).exists() for name in required_files):
+        return str(local_dir)
+    return os.getenv("SIGLIP_MODEL_ID", "google/siglip2-base-patch16-224")
 def expand_crop(img_pil, box, expansion_factor=1.5):
     width, height = img_pil.size
     x1, y1, x2, y2 = box
@@ -86,12 +105,15 @@ def inference(json_path, images_dir, conf_thresh=0.01, iou_thresh=0.5, validatio
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
     print("Loading YOLOE...")
-    yolo_model = YOLOE("yoloe-26l-seg.pt").to(device)
+    yolo_weights = REPO_ROOT / "yoloe-26l-seg.pt"
+    yolo_model = YOLOE(str(yolo_weights)).to(device)
     yolo_model.to(device)
 
     print("Loading SigLIP...")
-    siglip_processor = AutoProcessor.from_pretrained("/home/chen/workplace/LangTrack-Realtime/ultralytics/SigLIP/siglip2-base-patch16-224")
-    siglip_model = AutoModel.from_pretrained("/home/chen/workplace/LangTrack-Realtime/ultralytics/SigLIP/siglip2-base-patch16-224").to(device)
+    siglip_source = resolve_siglip_source()
+    print(f"Using SigLIP source: {siglip_source}")
+    siglip_processor = AutoProcessor.from_pretrained(siglip_source)
+    siglip_model = AutoModel.from_pretrained(siglip_source).to(device)
     siglip_model.eval()
 
     prompt_processor = None

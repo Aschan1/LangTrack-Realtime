@@ -62,7 +62,7 @@ def inference(json_path, images_dir, conf_thresh=0.01, iou_thresh=0.5, validatio
 
     print(f"Validation Start! {len(img_to_anns)} Pics in total...")
 
-    # Initialize counters for metrics
+    # Fix1: Initialize counters for metrics
     tp = 0  # True Positives
     fp = 0  # False Positives
     fn = 0  # False Negatives
@@ -189,7 +189,7 @@ def inference(json_path, images_dir, conf_thresh=0.01, iou_thresh=0.5, validatio
                 fp += 1
                 per_class_preds.setdefault(p_label, []).append((conf, 0))
 
-        # GTs not matched are false negatives
+        # Fix2: fn in the loop
         fn += (len(gt_boxes) - len(matched_gts))
 
     # ==========================================
