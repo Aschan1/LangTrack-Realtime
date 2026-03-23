@@ -13,22 +13,22 @@ from tqdm import tqdm
 # Ensure imports resolve to installed `ultralytics` package, not local namespace-shadow paths.
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
-for shadow_path in (str(SCRIPT_DIR), str(REPO_ROOT)):
-    while shadow_path in sys.path:
-        sys.path.remove(shadow_path)
+# for shadow_path in (str(SCRIPT_DIR), str(REPO_ROOT)):
+#     while shadow_path in sys.path:
+#         sys.path.remove(shadow_path)
 
 from transformers import AutoProcessor
 from ultralytics import YOLOE
 
 
 def resolve_wedetect_repo_hint():
-    env_hint = os.getenv("WEDETECT_REPO", "").strip()
-    if env_hint:
-        return Path(env_hint).expanduser().resolve()
-    default_hint = Path.home() / "projects" / "WeDetect"
-    if default_hint.is_dir():
-        return default_hint.resolve()
-    return None
+    # env_hint = os.getenv("WEDETECT_REPO", "").strip()
+    # if env_hint:
+    #     return Path(env_hint).expanduser().resolve()
+    # default_hint = Path.home() / "projects" / "WeDetect"
+    # if default_hint.is_dir():
+    #     return default_hint.resolve()
+    return Path("/home/chen/workplace/LangTrack-Realtime").resolve()
 
 
 def ensure_wedetect_repo_on_path():
@@ -87,13 +87,15 @@ def get_structured_query_text(ann):
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
-def get_query_label(ann, query_mode):
+def get_query_label(ann, query_mode="phrase"):
     if query_mode == "combined":
         return get_combined_label(ann)
     if query_mode == "target":
         return get_target_label(ann)
     if query_mode == "structured":
         return get_structured_query_text(ann)
+    if query_mode == "phrase":
+        return ann.get("phrase", "").strip()
     raise ValueError(f"Unsupported query_mode: {query_mode}")
 
 
@@ -377,7 +379,7 @@ def inference_wedetect_ref(
             yolo_result = yolo_model.predict(
                 img_path,
                 conf=proposal_conf,
-                iou=0.7,
+                iou=0.5,
                 max_det=proposal_max_det,
                 verbose=False,
             )[0]
@@ -527,11 +529,11 @@ def parse_args():
             "topk_per_query": 5,
         },
         "quality": {
-            "query_mode": "combined",
+            "query_mode": "phrase",
             "proposal_conf": 0.01,
-            "proposal_max_det": 300,
+            "proposal_max_det": 100,
             "max_queries_per_image": 0,
-            "topk_per_query": 10,
+            "topk_per_query": 1,
         },
     }
     parser.add_argument(
@@ -546,7 +548,7 @@ def parse_args():
     )
     parser.add_argument(
         "--wedetect-ref-checkpoint",
-        default=os.getenv("WEDETECT_REF_CHECKPOINT", "fushh7/WeDetect-Ref-2B"),
+        default=os.getenv("WEDETECT_REF_CHECKPOINT", "WeDetect-Ref-2B"),
         help="HF model id or local path for WeDetectRef model",
     )
     parser.add_argument("--iou-thresh", type=float, default=0.5, help="IoU threshold for metric matching")

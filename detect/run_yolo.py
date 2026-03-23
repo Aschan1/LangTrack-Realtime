@@ -197,3 +197,4 @@ if __name__ == "__main__":
     IMAGES_DIR = "yolo_dataset/indoors_subset/images"                
     
     inference_yolo_only(JSON_FILE, IMAGES_DIR, conf_thresh=0.01)
+

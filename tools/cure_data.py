@@ -98,9 +98,9 @@ def run_llm(json_path, images_dir, output_json_path, target_count=100, max_worke
     print("="*40)
 
 if __name__ == "__main__":
-    JSON_PATH = "yolo_dataset/indoors_subset/filtered_indoors.json"
-    IMAGES_DIR = "yolo_dataset/indoors_subset/images"
-    OUTPUT_JSON = "yolo_dataset/filtered_indoors_LM.json"
+    JSON_PATH = "yolo_dataset/indoors_subset/val_sceneGraphs.json"
+    IMAGES_DIR = "/home/chen/data/GQAimages/images"
+    OUTPUT_JSON = "yolo_dataset/filtered_home_LM.json"
     
     # 在这里指定 target_count，例如找到 50 张满足条件的就停下来
-    run_llm(JSON_PATH, IMAGES_DIR, OUTPUT_JSON, target_count=500, max_workers=12)
+    run_llm(JSON_PATH, IMAGES_DIR, OUTPUT_JSON, target_count=1200, max_workers=12)
