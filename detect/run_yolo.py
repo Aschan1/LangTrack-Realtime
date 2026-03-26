@@ -17,6 +17,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from ultralytics import YOLOE
 from run_world import calculate_iou
+from detect.refexp_metrics import compute_rec_metrics
 
 # Prompt method for YOLOE
 def get_combined_label(ann):
@@ -82,6 +83,7 @@ def get_predictions_and_gts(json_path, images_dir, conf_thresh):
             gt_cls_id = global_label_to_id[label_str]
             
             all_gts.append({'img_id': img_id, 'cls': gt_cls_id, 'box': gt_box, 'used': False})
+            all_gts[-1]['query_key'] = label_str
         
         # Predict with YOLOE
         results = yolo_model.predict(img_path, conf=conf_thresh, verbose=False)
@@ -101,7 +103,8 @@ def get_predictions_and_gts(json_path, images_dir, conf_thresh):
                 'cls': global_cls_id, 
                 'box': p_box, 
                 'conf': float(p_conf),
-                'p_label': label_str
+                'p_label': label_str,
+                'query_key': label_str,
             })
             
     return all_gts, all_preds
@@ -174,6 +177,7 @@ def inference_yolo_only(json_path, images_dir, conf_thresh=0.05, iou_thresh=0.5)
     map50 = np.mean(aps) if len(aps) > 0 else 0.0
     precision = global_tp / total_preds if total_preds > 0 else 0.0
     recall = global_tp / total_gts if total_gts > 0 else 0.0
+    rec_summary = compute_rec_metrics(all_gts, all_preds, iou_thresh, calculate_iou)
     
     if (precision + recall) > 0:
         f1_score = 2 * (precision * recall) / (precision + recall)
@@ -190,6 +194,10 @@ def inference_yolo_only(json_path, images_dir, conf_thresh=0.05, iou_thresh=0.5)
     print(f"Recall@{iou_thresh}:    {recall:.4f} ({recall*100:.2f}%)")
     print(f"F1-Score@{iou_thresh}:   {f1_score:.4f} ({f1_score*100:.2f}%)")
     print(f"mAP@{iou_thresh}:       {map50:.4f} ({map50*100:.2f}%)")
+    print(
+        f"REC@{iou_thresh}:       {rec_summary['rec']:.4f} ({rec_summary['rec']*100:.2f}%) "
+        f"[{rec_summary['rec_matched_queries']}/{rec_summary['rec_total_queries']}]"
+    )
     print("="*40)
 
 if __name__ == "__main__":
@@ -197,4 +205,3 @@ if __name__ == "__main__":
     IMAGES_DIR = "yolo_dataset/indoors_subset/images"                
     
     inference_yolo_only(JSON_FILE, IMAGES_DIR, conf_thresh=0.01)
-

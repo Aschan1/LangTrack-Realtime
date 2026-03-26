@@ -6,7 +6,7 @@ earlier per-annotation dump utility:
   - annotations are grouped by image
   - inference runs once per unique query for that image
   - predictions and GT boxes are collected into a shared metric pass
-  - IoU-based precision / recall / F1 / mAP are reported
+  - IoU-based precision / recall / F1 / mAP / REC are reported
 
 Because the relation block is defined only for exactly two prompts
 (`target_prompt`, `anchor_prompt`), this script evaluates one unique
@@ -20,6 +20,7 @@ consume that relation text directly.
 """
 
 import argparse
+import inspect
 import json
 import os
 import site
@@ -62,12 +63,27 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from ultralytics import YOLOE
 from ultralytics.utils.target_anchor_relation_adapter import load_target_anchor_relation_adapter
-from run_yolo_offline import DEFAULT_CACHE_PATH, build_embedding_cache, compose_embedding
+from refexp_metrics import compute_rec_metrics
+from run_yolo_offline import build_embedding_cache, compose_embedding
 
 INDOORS_SUBSET_DIR = REPO_ROOT / "yolo_dataset" / "indoors_subset"
 DEFAULT_JSON = INDOORS_SUBSET_DIR / "filtered_indoors_LM_vg_nonnull_spatial_relations.json"
 DEFAULT_IMAGES = INDOORS_SUBSET_DIR / "images"
 DEFAULT_WEIGHTS = REPO_ROOT / "yoloe-26l-seg.pt"
+DEFAULT_CACHE_PATH = REPO_ROOT / "detect" / "embedding_cache.pt"
+
+
+def supports_relation_inference(model):
+    """Return True when the loaded model forward path accepts relation-specific kwargs."""
+    try:
+        signature = inspect.signature(model.model.predict)
+    except (TypeError, ValueError, AttributeError):
+        return False
+
+    parameters = signature.parameters
+    if "use_target_anchor_relation" in parameters:
+        return True
+    return any(param.kind == inspect.Parameter.VAR_KEYWORD for param in parameters.values())
 
 
 def ordered_unique(items):
@@ -286,7 +302,19 @@ def collect_predictions_and_gts(
     if adapter_path:
         payload = load_target_anchor_relation_adapter(model, adapter_path, strict=False)
         print(f"Loaded relation adapter from: {adapter_path} (epoch={payload.get('epoch')})")
+        if payload.get("missing_keys") or payload.get("unexpected_keys"):
+            print(
+                "Adapter load details: "
+                f"missing={len(payload.get('missing_keys', []))}, "
+                f"unexpected={len(payload.get('unexpected_keys', []))}"
+            )
     head = model.model.model[-1]
+    relation_inference_supported = supports_relation_inference(model)
+    if not relation_inference_supported:
+        print(
+            "Warning: current local YOLOE model does not implement target-anchor relation inference kwargs. "
+            "Falling back to plain target/anchor prompting without relation rescoring."
+        )
 
     _, img_to_anns = load_dataset(json_path)
     if limit > 0:
@@ -396,17 +424,24 @@ def collect_predictions_and_gts(
             prompt_embeddings = torch.stack([prompt_embedding_cache[prompt] for prompt in prompt_labels]).unsqueeze(0).to(device)
             model.set_classes(prompt_labels, prompt_embeddings)
 
-        results = model.predict(
-            source=img_path,
-            use_target_anchor_relation=True,
-            target_anchor_pair_indices=pair_indices,
-            relation_topk_target=relation_topk_target,
-            relation_topk_anchor=relation_topk_anchor,
-            relation_lambda=relation_lambda,
-            relation_agg=relation_agg,
-            conf=conf_thresh,
-            verbose=False,
-        )
+        predict_kwargs = {
+            "source": img_path,
+            "conf": conf_thresh,
+            "verbose": False,
+        }
+        if relation_inference_supported:
+            predict_kwargs.update(
+                {
+                    "use_target_anchor_relation": True,
+                    "target_anchor_pair_indices": pair_indices,
+                    "relation_topk_target": relation_topk_target,
+                    "relation_topk_anchor": relation_topk_anchor,
+                    "relation_lambda": relation_lambda,
+                    "relation_agg": relation_agg,
+                }
+            )
+
+        results = model.predict(**predict_kwargs)
         model_forward_passes += 1
         query_pairs_evaluated += len(pair_to_query_infos)
 
@@ -494,6 +529,7 @@ def compute_metrics(all_gts, all_preds, iou_thresh):
     precision = float(global_tp / total_preds) if total_preds > 0 else 0.0
     recall = float(global_tp / total_gts) if total_gts > 0 else 0.0
     f1_score = float(2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
+    rec_summary = compute_rec_metrics(all_gts, all_preds, iou_thresh, calculate_iou)
 
     return {
         "ground_truths": total_gts,
@@ -503,6 +539,7 @@ def compute_metrics(all_gts, all_preds, iou_thresh):
         "recall": recall,
         "f1": f1_score,
         "map": map50,
+        **rec_summary,
     }
 
 
@@ -574,6 +611,10 @@ def main():
     print(f"Recall@{args.iou_thresh}:             {summary['recall']:.4f} ({summary['recall'] * 100:.2f}%)")
     print(f"F1-Score@{args.iou_thresh}:           {summary['f1']:.4f} ({summary['f1'] * 100:.2f}%)")
     print(f"mAP@{args.iou_thresh}:                {summary['map']:.4f} ({summary['map'] * 100:.2f}%)")
+    print(
+        f"REC@{args.iou_thresh}:                {summary['rec']:.4f} ({summary['rec'] * 100:.2f}%) "
+        f"[{summary['rec_matched_queries']}/{summary['rec_total_queries']}]"
+    )
     print("=" * 48)
 
     maybe_save_json(args.save_json, summary, stats, all_gts, all_preds)

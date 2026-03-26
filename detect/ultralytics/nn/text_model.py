@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import importlib.util
 from abc import abstractmethod
+from functools import lru_cache
 from pathlib import Path
 
 import torch
@@ -12,11 +14,59 @@ from PIL import Image
 from ultralytics.utils import checks
 from ultralytics.utils.torch_utils import smart_inference_mode
 
-try:
-    import clip
-except ImportError:
-    checks.check_requirements("git+https://github.com/ultralytics/CLIP.git")
-    import clip
+
+@lru_cache()
+def _load_clip():
+    """Import CLIP lazily so mobileclip paths do not pull in torchvision at module import time."""
+    try:
+        import clip
+    except ImportError:
+        checks.check_requirements("git+https://github.com/ultralytics/CLIP.git")
+        import clip
+    return clip
+
+
+@lru_cache()
+def _load_clip_simple_tokenizer():
+    """Load CLIP's tokenizer module directly from disk without importing clip.__init__."""
+    spec = importlib.util.find_spec("clip")
+    if spec is None or not spec.submodule_search_locations:
+        checks.check_requirements("git+https://github.com/ultralytics/CLIP.git")
+        spec = importlib.util.find_spec("clip")
+
+    if spec is None or not spec.submodule_search_locations:
+        raise ModuleNotFoundError("Could not locate the 'clip' package for tokenization.")
+
+    tokenizer_path = Path(next(iter(spec.submodule_search_locations))) / "simple_tokenizer.py"
+    module_spec = importlib.util.spec_from_file_location("_ultralytics_clip_simple_tokenizer", tokenizer_path)
+    if module_spec is None or module_spec.loader is None:
+        raise ImportError(f"Could not load CLIP tokenizer from {tokenizer_path}")
+
+    module = importlib.util.module_from_spec(module_spec)
+    module_spec.loader.exec_module(module)
+    return module.SimpleTokenizer()
+
+
+def _clip_tokenize(texts: str | list[str], context_length: int = 77, truncate: bool = True) -> torch.LongTensor:
+    """Tokenize text with CLIP's BPE tokenizer without importing torchvision-heavy clip.clip."""
+    if isinstance(texts, str):
+        texts = [texts]
+
+    tokenizer = _load_clip_simple_tokenizer()
+    sot_token = tokenizer.encoder["<|startoftext|>"]
+    eot_token = tokenizer.encoder["<|endoftext|>"]
+    tokens = [[sot_token, *tokenizer.encode(text), eot_token] for text in texts]
+
+    result = torch.zeros(len(tokens), context_length, dtype=torch.long)
+    for i, encoded in enumerate(tokens):
+        if len(encoded) > context_length:
+            if truncate:
+                encoded = encoded[:context_length]
+                encoded[-1] = eot_token
+            else:
+                raise RuntimeError(f"Input {texts[i]} is too long for context length {context_length}")
+        result[i, : len(encoded)] = torch.tensor(encoded, dtype=torch.long)
+    return result
 
 
 class TextModel(nn.Module):
@@ -79,6 +129,7 @@ class CLIP(TextModel):
             device (torch.device): Device to load the model on.
         """
         super().__init__()
+        clip = _load_clip()
         self.model, self.image_preprocess = clip.load(size, device=device)
         self.to(device)
         self.device = device
@@ -102,7 +153,7 @@ class CLIP(TextModel):
             >>> strict_tokens = model.tokenize("a photo of a cat", truncate=False)  # Enforce strict length checks
             >>> print(strict_tokens.shape)  # Same shape/content as tokens since prompt less than 77 tokens
         """
-        return clip.tokenize(texts, truncate=truncate).to(self.device)
+        return _clip_tokenize(texts, truncate=truncate).to(self.device)
 
     @smart_inference_mode()
     def encode_text(self, texts: torch.Tensor, dtype: torch.dtype = torch.float32) -> torch.Tensor:
@@ -289,7 +340,7 @@ class MobileCLIPTS(TextModel):
         from ultralytics.utils.downloads import attempt_download_asset
 
         self.encoder = torch.jit.load(attempt_download_asset(weight), map_location=device)
-        self.tokenizer = clip.clip.tokenize
+        self.tokenizer = _clip_tokenize
         self.device = device
 
     def tokenize(self, texts: list[str], truncate: bool = True) -> torch.Tensor:

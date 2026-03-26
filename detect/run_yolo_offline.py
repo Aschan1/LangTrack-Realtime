@@ -36,9 +36,22 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 
 from ultralytics import YOLOE
+from refexp_metrics import compute_rec_metrics
 
-# Reuse IoU and mAP helpers from run_world
-from run_world import calculate_iou
+
+def calculate_iou(box1, box2):
+    x1_inter = max(box1[0], box2[0])
+    y1_inter = max(box1[1], box2[1])
+    x2_inter = min(box1[2], box2[2])
+    y2_inter = min(box1[3], box2[3])
+
+    inter_area = max(0, x2_inter - x1_inter) * max(0, y2_inter - y1_inter)
+    if inter_area == 0:
+        return 0.0
+
+    box1_area = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    box2_area = (box2[2] - box2[0]) * (box2[3] - box2[1])
+    return inter_area / float(box1_area + box2_area - inter_area)
 
 # ───────────────────────────────────────────────────────────────────────────
 # Common indoor objects to add to the offline cache beyond dataset targets
@@ -291,6 +304,7 @@ def inference_offline(json_path, images_dir, cache_path, yolo_weights,
             label_str = get_combined_label(ann)
             gt_cls_id = global_label_to_id[label_str]
             all_gts.append({"img_id": img_id, "cls": gt_cls_id, "box": gt_box, "used": False})
+            all_gts[-1]["query_key"] = label_str
 
         # Record predictions
         for p_box, p_cls_local, p_conf in zip(raw_pred_boxes, raw_pred_classes, raw_pred_confs):
@@ -303,6 +317,7 @@ def inference_offline(json_path, images_dir, cache_path, yolo_weights,
                 "cls": global_cls_id,
                 "box": p_box,
                 "conf": float(p_conf),
+                "query_key": label_str,
             })
 
     # ── Metrics ──
@@ -378,6 +393,7 @@ def compute_metrics(all_gts, all_preds, iou_thresh=0.5):
     map50 = np.mean(aps) if len(aps) > 0 else 0.0
     precision = global_tp / total_preds if total_preds > 0 else 0.0
     recall = global_tp / total_gts if total_gts > 0 else 0.0
+    rec_summary = compute_rec_metrics(all_gts, all_preds, iou_thresh, calculate_iou)
     f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
 
     print("\n" + "=" * 40)
@@ -390,6 +406,10 @@ def compute_metrics(all_gts, all_preds, iou_thresh=0.5):
     print(f"Recall@{iou_thresh}:    {recall:.4f} ({recall * 100:.2f}%)")
     print(f"F1-Score@{iou_thresh}:   {f1_score:.4f} ({f1_score * 100:.2f}%)")
     print(f"mAP@{iou_thresh}:       {map50:.4f} ({map50 * 100:.2f}%)")
+    print(
+        f"REC@{iou_thresh}:       {rec_summary['rec']:.4f} ({rec_summary['rec'] * 100:.2f}%) "
+        f"[{rec_summary['rec_matched_queries']}/{rec_summary['rec_total_queries']}]"
+    )
     print("=" * 40)
 
 
@@ -400,7 +420,7 @@ def compute_metrics(all_gts, all_preds, iou_thresh=0.5):
 def main():
     parser = argparse.ArgumentParser(description="YOLOE with offline text embedding cache")
     parser.add_argument("--json_path", type=str,
-                        default="yolo_dataset/indoors_subset/filtered_indoors_LM_vg.json")
+                        default="yolo_dataset/indoors_subset/filtered_indoors_LM_vg_nonnull_spatial_relations.json")
     parser.add_argument("--images_dir", type=str,
                         default="yolo_dataset/indoors_subset/images")
     parser.add_argument("--cache_path", type=str,

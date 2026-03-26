@@ -1,4 +1,5 @@
 yolo_dataset/
+nyu_dataset/
 mobileclip2_b.ts
 models/
 yolo_dataset/
@@ -9,3 +10,15 @@ __pycache__/
 WeDetect-Ref-2B/
 WeDetect-Ref-4B/
 visualizations*/
+.env
+images/
+images/._flickr
+images/._nyu
+nyu_depth_v2_labeled.mat
+images.tar.gz
+mobileclip_blt.ts
+outputs/
+logs/
+._*
+detect/embedding_cache.pt
+yoloe-26l-seg.pt
