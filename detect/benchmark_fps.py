@@ -140,8 +140,8 @@ def bench_yoloe(entries, warmup, device):
         if not labels:
             continue
         # here we don't count the encoding time into the total time
-        model.set_classes(labels)
         with cuda_timer() as t:
+            model.set_classes(labels)
             model.predict(img_path, conf=0.05, verbose=False)
         times_ms.append(t["ms"])
 
@@ -199,7 +199,7 @@ def bench_yoloe_siglip(entries, warmup, device):
         yolo_model.predict(img_path, conf=0.01, verbose=False)
 
     # Timed run: YOLOE predict + SigLIP verify on each low-conf box
-    CONF_BYPASS = 0.4
+    CONF_BYPASS = 0.1
     times_ms = []
     for _, img_path, anns in tqdm(entries, desc="[YOLOE+SigLIP] Benchmarking"):
         labels = get_labels(anns)
