@@ -76,24 +76,6 @@ if __name__ == "__main__":
     # 测试代码 (模拟读取)
     with open(input_file, 'r', encoding='utf-8') as f:
         gqa_raw_data = json.load(f)
-    
-    # 这里用你发的数据做个小测试（只放了前两个物体演示）
-    # sample_gqa_data = {
-    #   "2397582": {
-    #     "width": 500,
-    #     "height": 333,
-    #     "objects": {
-    #       "1188535": {
-    #         "name": "meat", "h": 22, "w": 32, "y": 231, "x": 176, "attributes": [],
-    #         "relations": [{"object": "1188513", "name": "inside"}, {"object": "1188515", "name": "to the right of"}]
-    #       },
-    #       "1188513": {
-    #         "name": "skillet", "h": 118, "w": 350, "y": 210, "x": 148, "attributes": ["black"],
-    #         "relations": []
-    #       }
-    #     }
-    #   }
-    # }
 
     # 执行转换
     simplified_data = simplify_gqa_data(gqa_raw_data)
