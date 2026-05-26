@@ -6,6 +6,10 @@ Better real-time open-vocabulary detection system in home
 
 https://github.com/user-attachments/assets/6e758b35-858d-4790-b34a-80e0f0792f55
 
+YouTube Demonstration Video:
+[![YouTube Demo](https://img.youtube.com/vi/SFnGE2pWAJE/0.jpg)](https://www.youtube.com/watch?v=SFnGE2pWAJE)
+
+
 ## Project Description
 
 LangTrack-Realtime is a real-time open-vocabulary detection system based on advanced AI technology, designed for home environments. It integrates models like YOLOv8-World, Whisper, Qwen2.5, and SigLIP to achieve real-time object detection, speech recognition, and multimodal understanding at once.
