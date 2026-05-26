@@ -6,7 +6,8 @@ Better real-time open-vocabulary detection system in home
 
 https://github.com/user-attachments/assets/6e758b35-858d-4790-b34a-80e0f0792f55
 
-YouTube Demonstration Video:
+# YouTube Demonstration Video:
+
 [![YouTube Demo](https://img.youtube.com/vi/SFnGE2pWAJE/0.jpg)](https://www.youtube.com/watch?v=SFnGE2pWAJE)
 
 
