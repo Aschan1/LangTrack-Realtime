@@ -4,6 +4,8 @@ import io
 import queue
 import threading
 import requests
+import time
+import json
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
@@ -38,6 +40,60 @@ LOCK_AGREEMENT_N = 2                                    # field locks after N co
 SB_CHUNKS = int(SILENCE_TIME * (1000 / CHUNK_SIZE_MS))
 SPB_CHUNKS = int(MAX_DURATION * (1000 / CHUNK_SIZE_MS))
 MIN_SPB_CHUNKS = int(MIN_SPEECH * (1000 / CHUNK_SIZE_MS))
+
+#Implementing methods for metrics
+#Class to handle prefix stabilization and field locking for offline metric driver, mirroring the logic used in VoiceControlledYOLO.
+class StreamingParser:
+    """Standalone prefix-stabilization + field-locking for the offline metric
+    driver. Mirrors the same logic used inside VoiceControlledYOLO (minus the
+    event logging), so the driver can run it without a mic, camera, or YOLOE."""
+    def __init__(self):
+        self.prev_partial_words = []
+        self.locked = {"target": None, "attributes": None,
+                       "anchor_object": None, "spatial_relation": None}
+        self.pending = {k: (None, 0) for k in self.locked}
+        self.last_parsed_prefix = ""
+
+    @staticmethod
+    def stable_prefix(prev_words, curr_words):
+        out = []
+        for a, b in zip(prev_words, curr_words):
+            if a == b: out.append(a)
+            else: break
+        return out
+
+    def stabilize(self, curr_words):
+        committed = self.stable_prefix(self.prev_partial_words, curr_words)
+        self.prev_partial_words = curr_words
+        return committed
+
+    def update_locks(self, res):
+        for field in self.locked:
+            if self.locked[field] is not None:
+                continue
+            new_value = getattr(res, field, None)
+            if str(new_value).strip().lower() in ("none", "null", "", "[]", "unknown"):
+                self.pending[field] = (None, 0)
+                continue
+            prev_value, count = self.pending[field]
+            count = count + 1 if new_value == prev_value else 1
+            self.pending[field] = (new_value, count)
+            if count >= LOCK_AGREEMENT_N:
+                self.locked[field] = new_value
+
+
+def build_prompt_processor(prompt_path="./LLMs/optimized_new_prompt.json"):
+    """Returns a loaded DSPy predictor without instantiating VoiceControlledYOLO
+    (so the driver loads Qwen only, not YOLOE/VAD/mic)."""
+    lm = dspy.LM(model="openai/qwen3.5", api_base="http://127.0.0.1:8080/v1",
+                 api_key="unused", cache=False)
+    dspy.configure(lm=lm)
+    pp = dspy.Predict(PromptProcessor)
+    try:
+        pp.load(prompt_path)
+    except Exception as e:
+        print(f"[warn] using default prompt: {e}")
+    return pp
 
 # ==========================================
 # 2. Main Encapsulated Class
@@ -112,6 +168,9 @@ class VoiceControlledYOLO:
 
     # Function to reset the utterance state for new speech input
     def _reset_utterance_state(self):
+        self.t_utterance_start_time = None#Start time of the current utterance, used to track the duration of speech input.
+        self.lock_events = []#List to store events related to locking fields in the structured output, used for debugging and analysis of the locking mechanism.
+        self.flip_events = []#List to store events related to flipping fields in the structured output, used for debugging and analysis of the flipping mechanism.
         self.prev_partial_words = []
         self.committed_words = []
         self.locked  = {"target": None, "attributes": None,
@@ -146,6 +205,7 @@ class VoiceControlledYOLO:
             self.pending[field] = (new_value, count)
             if count >= LOCK_AGREEMENT_N:
                 self.locked[field]=new_value #Lock the field if agreement count is reached
+                self.lock_events.append((field, new_value, time.monotonic()))#Record the lock event for analysis
     
     #Function to push the locked target to the global search query for YOLO tracking
     def push_target(self):
@@ -154,6 +214,7 @@ class VoiceControlledYOLO:
         with self.query_lock:
             if query != self.global_search_query:#Only update the global search query if it has changed to avoid unnecessary updates
                 self.global_search_query = query#Update the global search query with the new target
+                self.flip_events.append((query, time.monotonic()))#Record the flip event for analysis
     #Function to handle the interim parse of speech input, stabilizing the output and committing to final output if enough stable words are detected
     def interim_parse(self, speech_buffer):
         text = self.transcribe_via_api(speech_buffer)
@@ -218,6 +279,8 @@ class VoiceControlledYOLO:
             # if triggered, add the audio chunk to the buffer and check for minimum length
             if triggered:
                 speech_buffer.append(resampled_16k)
+                if self.t_utterance_start_time is None:#If this is the first chunk of speech detected, record the start time for duration tracking
+                    self.t_utterance_start_time = time.monotonic()#Start time of the current utterance, used to track the duration of speech input.
                 silence_counter = 0
                 is_speaking = True
                 chunks_since_last_parse += 1
@@ -231,6 +294,16 @@ class VoiceControlledYOLO:
                     if silence_counter >= SB_CHUNKS or len(speech_buffer) >= SPB_CHUNKS:
                         if len(speech_buffer) >= MIN_SPB_CHUNKS:
                             self.final_parse(speech_buffer)
+                            t_end = time.monotonic() #Record the end time of the utterance for duration tracking
+                            record = {
+                                "t_start": self.t_utterance_start_time,
+                                "t_end": t_end,
+                                "lock_events": self.lock_events,
+                                "flip_events": self.flip_events,
+                                "final_query": self.global_search_query,
+                            }
+                            with open("events_log.jsonl", "a") as f:
+                                f.write(json.dumps(record) + "\n")#Log the events and final query to a JSON file for analysis
                             # print(f"\n[Whisper]: Speech captured, sending to Whisper API...")
                             # text = self.transcribe_via_api(speech_buffer)
                             
